@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>สั่งงานรดน้ำระยะไกล</title>
+    <!-- ใช้ Tailwind CSS เพื่อความสวยงาม -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- ใช้ Paho MQTT สำหรับต่อ MQTT ผ่าน WebSockets -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        body { background-color: #f3f4f6; font-family: 'Sarabun', sans-serif; }
+        .active-day { background-color: #10B981; color: white; border-color: #10B981; }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center">
+
+    <div class="w-full max-w-md bg-white rounded-xl shadow-lg overflow-hidden">
+        <!-- Header -->
+        <div class="bg-green-600 p-4 text-white text-center">
+            <h1 class="text-xl font-bold">🥬 ระบบรดน้ำระยะไกล</h1>
+            <p id="connectionStatus" class="text-xs mt-1 text-green-200">กำลังเชื่อมต่อ Server...</p>
+        </div>
+
+        <!-- Monitor & Manual Control -->
+        <div class="p-6 text-center border-b">
+            <h2 class="text-gray-500 text-sm mb-2">สถานะปัจจุบัน</h2>
+            <div id="pumpStatus" class="text-3xl font-bold text-gray-400 mb-6">รอข้อมูล...</div>
+            
+            <div class="flex gap-4 justify-center">
+                <button onclick="sendCommand('ON')" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full shadow transition transform active:scale-95">
+                    เปิดน้ำ 💧
+                </button>
+                <button onclick="sendCommand('OFF')" class="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-8 rounded-full shadow transition transform active:scale-95">
+                    ปิดน้ำ 🛑
+                </button>
+            </div>
+        </div>
+
+        <!-- Schedule Settings -->
+        <div class="p-6 bg-gray-50">
+            <h2 class="text-gray-700 font-bold mb-4 flex items-center">
+                <span class="mr-2">⏰</span> ตั้งเวลาอัตโนมัติ
+            </h2>
+            
+            <div class="space-y-4">
+                <!-- Time -->
+                <div class="flex justify-between items-center">
+                    <label class="text-gray-600">เวลาเริ่มทำงาน:</label>
+                    <div class="flex gap-2">
+                        <select id="autoHour" class="border rounded p-2 bg-white"></select>
+                        <span class="py-2">:</span>
+                        <select id="autoMin" class="border rounded p-2 bg-white"></select>
+                    </div>
+                </div>
+
+                <!-- Duration -->
+                <div class="flex justify-between items-center">
+                    <label class="text-gray-600">นาน (นาที):</label>
+                    <input type="number" id="autoDur" class="border rounded p-2 w-20 text-center" value="5" min="1" max="60">
+                </div>
+
+                <!-- Days -->
+                <div>
+                    <label class="text-gray-600 block mb-2">วันทำงาน:</label>
+                    <div class="flex justify-between gap-1">
+                        <div onclick="toggleDay(0)" id="d0" class="day-btn w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer text-sm font-bold bg-white text-gray-500">อา</div>
+                        <div onclick="toggleDay(1)" id="d1" class="day-btn w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer text-sm font-bold bg-white text-gray-500">จ</div>
+                        <div onclick="toggleDay(2)" id="d2" class="day-btn w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer text-sm font-bold bg-white text-gray-500">อ</div>
+                        <div onclick="toggleDay(3)" id="d3" class="day-btn w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer text-sm font-bold bg-white text-gray-500">พ</div>
+                        <div onclick="toggleDay(4)" id="d4" class="day-btn w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer text-sm font-bold bg-white text-gray-500">พฤ</div>
+                        <div onclick="toggleDay(5)" id="d5" class="day-btn w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer text-sm font-bold bg-white text-gray-500">ศ</div>
+                        <div onclick="toggleDay(6)" id="d6" class="day-btn w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer text-sm font-bold bg-white text-gray-500">ส</div>
+                    </div>
+                </div>
+
+                <!-- Enable/Disable -->
+                <div class="flex items-center justify-between mt-4">
+                    <label class="text-gray-600">เปิดระบบออโต้:</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="autoEnable" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </label>
+                </div>
+
+                <button onclick="saveSchedule()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow mt-4">
+                    บันทึกการตั้งค่า
+                </button>
+            </div>
+        </div>
+        
+        <div class="mt-4 text-xs text-gray-400 text-center">
+            ใช้ Port 8884 (Secure WSS) สำหรับ GitHub Pages
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const mqttBroker = "broker.hivemq.com";
+        // *** สำคัญ: ต้องใช้ Port 8884 สำหรับ WSS (Secure WebSocket) บน GitHub ***
+        const mqttPort = 8884; 
+        const clientId = "WebClient_" + Math.random().toString(16).substr(2, 8);
+        
+        // Topics
+        const topicCmd = "farm/water/cmd";
+        const topicState = "farm/water/state";
+        const topicSetSched = "farm/water/set_schedule";
+        const topicGetSched = "farm/water/get_schedule";
+        const topicDataSched = "farm/water/schedule_data";
+
+        // Global Vars
+        let client;
+        let activeDays = [false, false, false, false, false, false, false];
+
+        // Init UI
+        const hSelect = document.getElementById('autoHour');
+        const mSelect = document.getElementById('autoMin');
+        for(let i=0; i<24; i++) hSelect.innerHTML += `<option value="${i}">${i.toString().padStart(2,'0')}</option>`;
+        for(let i=0; i<60; i++) mSelect.innerHTML += `<option value="${i}">${i.toString().padStart(2,'0')}</option>`;
+
+        function connectMQTT() {
+            document.getElementById('connectionStatus').innerText = "Connecting...";
+            client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId);
+            client.onConnectionLost = onConnectionLost;
+            client.onMessageArrived = onMessageArrived;
+            
+            // *** สำคัญ: useSSL ต้องเป็น true สำหรับ GitHub Pages ***
+            client.connect({onSuccess:onConnect, useSSL:true});
+        }
+
+        function onConnect() {
+            document.getElementById('connectionStatus').innerText = "🟢 Connected to Server";
+            client.subscribe(topicState);
+            client.subscribe(topicDataSched);
+            
+            // ขอข้อมูลล่าสุดทันทีที่ต่อติด
+            setTimeout(() => {
+                let msg = new Paho.MQTT.Message("GET");
+                msg.destinationName = topicGetSched;
+                client.send(msg);
+            }, 1000);
+        }
+
+        function onConnectionLost(responseObject) {
+            document.getElementById('connectionStatus').innerText = "🔴 Disconnected (" + responseObject.errorMessage + ")";
+            setTimeout(connectMQTT, 5000); // Auto Reconnect
+        }
+
+        function onMessageArrived(message) {
+            console.log("Msg Recv: " + message.destinationName + " -> " + message.payloadString);
+            
+            if (message.destinationName === topicState) {
+                // Update Pump Status
+                const statusDiv = document.getElementById('pumpStatus');
+                if (message.payloadString === "ON") {
+                    statusDiv.innerText = "กำลังรดน้ำ 💦";
+                    statusDiv.className = "text-3xl font-bold text-green-500 mb-6";
+                } else {
+                    statusDiv.innerText = "ปิดอยู่";
+                    statusDiv.className = "text-3xl font-bold text-gray-400 mb-6";
+                }
+            } else if (message.destinationName === topicDataSched) {
+                // Update Schedule UI from ESP32 Data
+                const data = JSON.parse(message.payloadString);
+                document.getElementById('autoHour').value = data.hour;
+                document.getElementById('autoMin').value = data.min;
+                document.getElementById('autoDur').value = data.dur;
+                document.getElementById('autoEnable').checked = data.en;
+                
+                // Update Days
+                activeDays = data.days;
+                updateDayUI();
+            }
+        }
+
+        function sendCommand(cmd) {
+            if(!client || !client.isConnected()) return alert("ยังไม่เชื่อมต่อ Server");
+            let message = new Paho.MQTT.Message(cmd);
+            message.destinationName = topicCmd;
+            client.send(message);
+        }
+
+        function toggleDay(dayIndex) {
+            activeDays[dayIndex] = !activeDays[dayIndex];
+            updateDayUI();
+        }
+
+        function updateDayUI() {
+            for(let i=0; i<7; i++) {
+                const el = document.getElementById('d'+i);
+                if(activeDays[i]) {
+                    el.classList.add("active-day");
+                    el.classList.remove("bg-white", "text-gray-500");
+                } else {
+                    el.classList.remove("active-day");
+                    el.classList.add("bg-white", "text-gray-500");
+                }
+            }
+        }
+
+        function saveSchedule() {
+            if(!client || !client.isConnected()) return alert("ยังไม่เชื่อมต่อ Server");
+            
+            const payload = {
+                hour: parseInt(document.getElementById('autoHour').value),
+                min: parseInt(document.getElementById('autoMin').value),
+                dur: parseInt(document.getElementById('autoDur').value),
+                en: document.getElementById('autoEnable').checked,
+                days: activeDays
+            };
+
+            let message = new Paho.MQTT.Message(JSON.stringify(payload));
+            message.destinationName = topicSetSched;
+            client.send(message);
+            
+            alert("ส่งคำสั่งบันทึกแล้ว!");
+        }
+
+        // Start
+        connectMQTT();
+
+    </script>
+</body>
+</html>
