@@ -3,17 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>สั่งงานรดน้ำระยะไกล</title>
-    
-    <!-- Tailwind CSS (ตัวจัดหน้าเว็บสวยๆ) -->
+    <title>สั่งงานรดน้ำระยะไกล (Final)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Paho MQTT Library (ตัวคุยกับ ESP32) - อัปเดตเวอร์ชัน 1.0.2 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js" type="text/javascript"></script>
-    
-    <!-- ฟอนต์ภาษาไทย -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
-    
     <style>
         body { background-color: #f0f2f5; font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; }
         .sched-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -21,7 +14,6 @@
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
@@ -29,8 +21,8 @@
     <div class="w-full max-w-md md:max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
         
         <!-- Header -->
-        <div class="bg-gradient-to-r from-green-600 to-green-500 p-5 text-white relative shadow-md">
-            <div class="flex items-center justify-center md:justify-start gap-3">
+        <div class="bg-gradient-to-r from-green-600 to-green-500 p-5 text-white relative shadow-md flex justify-between items-center">
+            <div class="flex items-center gap-3">
                 <span class="text-3xl">🥬</span>
                 <div>
                     <h1 class="text-xl md:text-2xl font-bold tracking-tight">Smart Farm Control</h1>
@@ -39,8 +31,21 @@
                     </p>
                 </div>
             </div>
-            <!-- Sync Indicator -->
-            <div id="syncIndicator" class="absolute top-5 right-5 w-3 h-3 rounded-full bg-white shadow-lg opacity-0 transition-opacity duration-300"></div>
+            
+            <!-- WiFi Signal Indicator (เพิ่มใหม่) -->
+            <div class="flex flex-col items-end">
+                <div class="flex items-end gap-1 h-4" id="wifiIcon">
+                    <!-- Bars will be injected by JS -->
+                    <div class="w-1 h-1 bg-green-200/50 rounded-sm"></div>
+                    <div class="w-1 h-2 bg-green-200/50 rounded-sm"></div>
+                    <div class="w-1 h-3 bg-green-200/50 rounded-sm"></div>
+                    <div class="w-1 h-4 bg-green-200/50 rounded-sm"></div>
+                </div>
+                <span id="rssiText" class="text-[10px] text-green-100 mt-1">-- dBm</span>
+            </div>
+
+            <!-- Sync Dot -->
+            <div id="syncIndicator" class="absolute top-2 right-2 w-2 h-2 rounded-full bg-white shadow-lg opacity-0 transition-opacity duration-300"></div>
         </div>
 
         <div class="flex flex-col md:flex-row">
@@ -51,6 +56,7 @@
                     <h2 class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">Dashboard Overview</h2>
                     
                     <div class="space-y-4">
+                        <!-- Pump Status -->
                         <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
                             <div class="flex items-center gap-3">
                                 <div id="pumpStatusIcon" class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center transition-colors duration-300">
@@ -63,10 +69,11 @@
                             </div>
                         </div>
 
+                        <!-- Mode Status -->
                         <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
                             <div class="flex items-center gap-3">
                                 <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-500">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 </div>
                                 <div>
                                     <p class="text-xs text-gray-500">โหมดระบบ</p>
@@ -84,12 +91,10 @@
                     <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">Manual Control</p>
                     <div class="grid grid-cols-2 gap-3">
                         <button onclick="sendCommand('ON')" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1">
-                            <span class="text-2xl">💧</span>
-                            <span>เปิดน้ำ</span>
+                            <span class="text-2xl">💧</span><span>เปิดน้ำ</span>
                         </button>
                         <button onclick="sendCommand('OFF')" class="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1">
-                            <span class="text-2xl">🛑</span>
-                            <span>ปิดน้ำ</span>
+                            <span class="text-2xl">🛑</span><span>ปิดน้ำ</span>
                         </button>
                     </div>
                 </div>
@@ -105,35 +110,31 @@
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-
                     <!-- Schedule 1 -->
                     <div class="sched-card bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
                         <div class="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
                         <div class="flex justify-between items-center mb-4">
                             <span class="font-bold text-gray-800 text-sm">ช่วงที่ 1 (เช้า)</span>
                             <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="en0" class="sr-only peer">
+                                <input type="checkbox" id="en0" onchange="markEditing()" class="sr-only peer">
                                 <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
                             </label>
                         </div>
-                        
                         <div class="space-y-3">
                             <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
                                 <span class="text-xs text-gray-400">เวลาเริ่ม</span>
                                 <div class="flex items-center font-mono font-bold text-gray-700">
-                                    <select id="h0" class="bg-transparent outline-none cursor-pointer hover:text-green-600 focus:bg-white focus:ring-2 focus:ring-green-200 rounded"></select>
+                                    <select id="h0" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-green-600 focus:bg-white focus:ring-2 focus:ring-green-200 rounded"></select>
                                     <span class="mx-1">:</span>
-                                    <select id="m0" class="bg-transparent outline-none cursor-pointer hover:text-green-600 focus:bg-white focus:ring-2 focus:ring-green-200 rounded"></select>
+                                    <select id="m0" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-green-600 focus:bg-white focus:ring-2 focus:ring-green-200 rounded"></select>
                                 </div>
                             </div>
                             <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
                                 <span class="text-xs text-gray-400">นาน (นาที)</span>
-                                <input type="number" id="du0" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-green-600 focus:bg-white focus:ring-2 focus:ring-green-200 rounded" min="1" max="60">
+                                <input type="number" id="du0" oninput="markEditing()" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-green-600 focus:bg-white focus:ring-2 focus:ring-green-200 rounded" min="1" max="60">
                             </div>
                         </div>
-
                         <div class="mt-4 pt-4 border-t border-gray-100">
-                            <p class="text-[10px] text-gray-400 mb-2 uppercase font-bold">Active Days</p>
                             <div class="flex justify-between" id="days0"></div>
                         </div>
                     </div>
@@ -144,28 +145,25 @@
                         <div class="flex justify-between items-center mb-4">
                             <span class="font-bold text-gray-800 text-sm">ช่วงที่ 2 (เย็น)</span>
                             <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="en1" class="sr-only peer">
+                                <input type="checkbox" id="en1" onchange="markEditing()" class="sr-only peer">
                                 <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                             </label>
                         </div>
-                        
                         <div class="space-y-3">
                             <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
                                 <span class="text-xs text-gray-400">เวลาเริ่ม</span>
                                 <div class="flex items-center font-mono font-bold text-gray-700">
-                                    <select id="h1" class="bg-transparent outline-none cursor-pointer hover:text-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-200 rounded"></select>
+                                    <select id="h1" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-200 rounded"></select>
                                     <span class="mx-1">:</span>
-                                    <select id="m1" class="bg-transparent outline-none cursor-pointer hover:text-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-200 rounded"></select>
+                                    <select id="m1" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-200 rounded"></select>
                                 </div>
                             </div>
                             <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
                                 <span class="text-xs text-gray-400">นาน (นาที)</span>
-                                <input type="number" id="du1" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-200 rounded" min="1" max="60">
+                                <input type="number" id="du1" oninput="markEditing()" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-200 rounded" min="1" max="60">
                             </div>
                         </div>
-
                         <div class="mt-4 pt-4 border-t border-gray-100">
-                            <p class="text-[10px] text-gray-400 mb-2 uppercase font-bold">Active Days</p>
                             <div class="flex justify-between" id="days1"></div>
                         </div>
                     </div>
@@ -182,8 +180,8 @@
             </div>
         </div>
         
-        <div class="bg-gray-50 p-2 text-center border-t border-gray-100">
-            <p class="text-[10px] text-gray-400">System Ready • Fixed Input Sync</p>
+        <div class="bg-gray-50 p-2 text-center border-t border-gray-100 w-full mt-4">
+            <p class="text-[10px] text-gray-400">System Ready • GitHub Pages WSS</p>
         </div>
     </div>
 
@@ -206,8 +204,10 @@
         ];
         const dayLabels = ["อา","จ","อ","พ","พฤ","ศ","ส"];
         let syncInterval;
+        let isEditing = false;
+        let editTimeout;
 
-        // Init HTML Options
+        // --- Init UI ---
         function initSelectors(hid, mid) {
             const h = document.getElementById(hid);
             const m = document.getElementById(mid);
@@ -232,24 +232,54 @@
                     <div onclick="toggleDay(${slotIndex}, ${dayIdx})" 
                          class="w-8 h-8 rounded-full border flex items-center justify-center cursor-pointer text-xs font-bold transition-all duration-200 select-none ${colorClass}">
                         ${label}
-                    </div>
-                `;
+                    </div>`;
             });
         }
         renderDayButtons(0);
         renderDayButtons(1);
 
-        // --- Helper: ตรวจสอบว่าผู้ใช้กำลังพิมพ์/เลือกอยู่หรือไม่ ---
+        // --- Helper: UI Logic ---
+        function markEditing() {
+            isEditing = true;
+            clearTimeout(editTimeout);
+            const btn = document.getElementById('btnSave');
+            if (!btn.innerText.includes("Unsaved")) {
+                btn.innerHTML = `<span>✏️</span> มีการแก้ไข (ยังไม่บันทึก)`;
+                btn.classList.replace("bg-blue-600", "bg-yellow-600");
+            }
+            editTimeout = setTimeout(() => { isEditing = false; }, 10000); 
+        }
+
         function isInputFocused() {
             const el = document.activeElement;
             return (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT'));
+        }
+
+        function updateWifiSignal(rssi) {
+            const rssiVal = parseInt(rssi);
+            const bars = document.getElementById('wifiIcon').children;
+            const text = document.getElementById('rssiText');
+            
+            text.innerText = rssiVal + " dBm";
+            
+            // Reset all bars
+            for(let bar of bars) bar.classList.replace('bg-white', 'bg-green-200/50');
+            for(let bar of bars) bar.classList.remove('bg-green-200/50');
+
+            // Set active bars based on signal
+            bars[0].className = "w-1 h-1 rounded-sm " + (rssiVal > -90 ? "bg-white" : "bg-red-500");
+            bars[1].className = "w-1 h-2 rounded-sm " + (rssiVal > -80 ? "bg-white" : "bg-green-200/30");
+            bars[2].className = "w-1 h-3 rounded-sm " + (rssiVal > -70 ? "bg-white" : "bg-green-200/30");
+            bars[3].className = "w-1 h-4 rounded-sm " + (rssiVal > -60 ? "bg-white" : "bg-green-200/30");
+
+            if(rssiVal < -80) text.classList.add('text-red-300');
+            else text.classList.remove('text-red-300');
         }
 
         // --- MQTT ---
         function connectMQTT() {
             document.getElementById('connectionStatus').innerText = "Connecting...";
             document.getElementById('connectionStatus').className = "text-xs text-yellow-600 font-medium bg-yellow-100 px-2 py-0.5 rounded-full inline-block mt-1";
-            
             client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId);
             client.onConnectionLost = onConnectionLost;
             client.onMessageArrived = onMessageArrived;
@@ -259,7 +289,6 @@
         function onConnect() {
             document.getElementById('connectionStatus').innerText = "Online";
             document.getElementById('connectionStatus').className = "text-xs text-green-700 font-medium bg-green-100 px-2 py-0.5 rounded-full inline-block mt-1 animate-pulse";
-            
             client.subscribe(topicState);
             client.subscribe(topicDataSched);
             requestSync();
@@ -287,28 +316,34 @@
             if (msg.destinationName === topicDataSched) {
                 const data = JSON.parse(msg.payloadString);
                 
-                // *** จุดสำคัญ: ถ้าผู้ใช้กำลังกดเลือกค่าอยู่ (Focus) จะไม่อัปเดตค่าทับ ***
+                // 1. Update RSSI (ถ้ามี)
+                if(data.rssi) updateWifiSignal(data.rssi);
+
+                // 2. Update Schedules (ถ้าไม่ได้แก้ไขอยู่)
                 if(data.schedules) {
-                    scheds = data.schedules;
-                    if (!isInputFocused()) {
+                    if (!isEditing && !isInputFocused()) { 
+                        scheds = data.schedules;
                         updateUIFromData();
                     }
                 }
 
-                // ส่วนของการแสดงผลปุ่มบันทึกและสถานะอื่นๆ อัปเดตได้ตลอด
+                // 3. Update Save Button State
                 const btn = document.getElementById('btnSave');
                 if(btn.innerText.includes("กำลังบันทึก")) {
                     btn.innerHTML = `<span>✅</span> บันทึกเรียบร้อย`;
                     btn.classList.replace("bg-gray-400", "bg-green-600");
+                    isEditing = false;
                     setTimeout(() => {
                         btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> บันทึกการตั้งค่าทั้งหมด`;
                         btn.classList.replace("bg-green-600", "bg-blue-600");
+                        btn.classList.remove("bg-yellow-600");
                     }, 2000);
                 }
 
+                // 4. Update Status
                 const isOn = data.isWatering;
                 const isAuto = data.isAutoRun;
-                const anyScheduleEnabled = scheds.some(s => s.en);
+                const anyScheduleEnabled = (data.schedules || scheds).some(s => s.en);
                 
                 const pumpText = document.getElementById('pumpStatusText');
                 const pumpIcon = document.getElementById('pumpStatusIcon');
@@ -355,6 +390,7 @@
         }
 
         function toggleDay(slot, day) {
+            markEditing();
             scheds[slot].days[day] = !scheds[slot].days[day];
             renderDayButtons(slot);
         }
@@ -362,12 +398,13 @@
         function saveSchedule() {
             if(!client || !client.isConnected()) return alert("ยังไม่เชื่อมต่อ Server");
             
-            // ทำให้ปุ่ม Input เสีย Focus เพื่อให้ระบบ Sync กลับมาทำงานต่อหลังจากบันทึกเสร็จ
             document.activeElement.blur(); 
+            clearTimeout(editTimeout); 
 
             const btn = document.getElementById('btnSave');
             btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> กำลังบันทึก...`;
             btn.classList.replace("bg-blue-600", "bg-gray-400");
+            btn.classList.remove("bg-yellow-600");
 
             for(let i=0; i<2; i++) {
                 scheds[i].h = parseInt(document.getElementById('h'+i).value);
@@ -393,5 +430,3 @@
     </script>
 </body>
 </html>
-
-
