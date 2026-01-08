@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>สั่งงานรดน้ำระยะไกล (Final + Log)</title>
+    <title>สั่งงานรดน้ำระยะไกล (Fix Status)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
@@ -11,7 +11,6 @@
         body { background-color: #f0f2f5; font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; }
         .sched-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .sched-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        /* Scrollbar สำหรับ Log Box */
         .log-scroll::-webkit-scrollbar { width: 6px; }
         .log-scroll::-webkit-scrollbar-track { background: #1a1a1a; }
         .log-scroll::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 3px; }
@@ -213,25 +212,20 @@
         }
         renderDayButtons(0); renderDayButtons(1);
 
-        // --- Log Function ---
         function addLog(msg, type="info") {
             const box = document.getElementById('consoleLog');
             const time = new Date().toLocaleTimeString('th-TH', { hour12: false });
             let color = "text-green-400";
             if(type === "send") color = "text-blue-300";
             if(type === "error") color = "text-red-400";
-            
             const item = document.createElement('div');
             item.className = color;
             item.innerHTML = `<span class="text-gray-600 mr-2">[${time}]</span>${msg}`;
-            
             box.appendChild(item);
             box.scrollTop = box.scrollHeight;
         }
 
-        function clearLog() {
-            document.getElementById('consoleLog').innerHTML = '<div class="text-gray-500 italic">-- Log Cleared --</div>';
-        }
+        function clearLog() { document.getElementById('consoleLog').innerHTML = '<div class="text-gray-500 italic">-- Log Cleared --</div>'; }
 
         function markEditing() {
             isEditing = true; clearTimeout(editTimeout);
@@ -259,11 +253,24 @@
             bars[3].classList.add(rssiVal > -60 ? "bg-white" : "h-4");
         }
 
+        function updatePumpStatusUI(isOn) {
+            const pumpText = document.getElementById('pumpStatusText');
+            const pumpIcon = document.getElementById('pumpStatusIcon');
+            const currentText = pumpText.innerText;
+            const newText = isOn ? "กำลังรดน้ำ" : "ปิดอยู่";
+
+            if (currentText !== newText) {
+                pumpText.innerText = newText;
+                pumpText.className = isOn ? "font-bold text-green-600 text-lg" : "font-bold text-gray-700 text-lg";
+                pumpIcon.className = isOn ? "w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-lg shadow-green-200 animate-pulse" : "w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-white";
+                addLog(isOn ? "💧 Pump STARTED" : "🛑 Pump STOPPED", "info");
+            }
+        }
+
         function connectMQTT() {
             document.getElementById('connectionStatus').innerText = "Connecting...";
             document.getElementById('connectionStatus').className = "text-xs text-yellow-600 font-medium bg-yellow-100 px-2 py-0.5 rounded-full inline-block mt-1";
             addLog("Connecting to Server...", "info");
-            
             client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId);
             client.onConnectionLost = onConnectionLost;
             client.onMessageArrived = onMessageArrived;
@@ -299,23 +306,39 @@
         }
 
         function onMessageArrived(msg) {
+            addLog(`📥 Recv: ${msg.destinationName}`, "info");
+
+            // 1. Handle JSON Data (Full Update)
             if (msg.destinationName === topicDataSched) {
                 const data = JSON.parse(msg.payloadString);
                 
-                // --- Log Update ---
-                if(document.getElementById('pumpStatusText').innerText === "รอข้อมูล...") {
-                    addLog("📥 Received Initial Data", "info");
-                }
-
                 if(data.rssi) updateWifiSignal(data.rssi);
                 
-                if(data.schedules) {
-                    if (!isEditing && !isInputFocused()) { 
-                        scheds = data.schedules;
-                        updateUIFromData();
+                if(data.schedules && !isEditing && !isInputFocused()) { 
+                    scheds = data.schedules;
+                    updateUIFromData();
+                }
+
+                // Update Pump Status
+                updatePumpStatusUI(data.isWatering);
+
+                // Update Work Status
+                const wStatus = document.getElementById('workStatus');
+                const anyScheduleEnabled = (data.schedules || scheds).some(s => s.en);
+                if(data.isWatering) {
+                    wStatus.innerText = data.isAutoRun ? "Auto Running 🕒" : "Manual Running 🖐️";
+                    wStatus.className = data.isAutoRun ? "text-xs font-bold text-white bg-blue-500 px-2 py-0.5 rounded inline-block" : "text-xs font-bold text-white bg-orange-500 px-2 py-0.5 rounded inline-block";
+                } else {
+                    if(anyScheduleEnabled) {
+                        wStatus.innerText = "Auto Standby";
+                        wStatus.className = "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded inline-block border border-green-200";
+                    } else {
+                        wStatus.innerText = "Manual Only";
+                        wStatus.className = "text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded inline-block border border-gray-200";
                     }
                 }
 
+                // Save Button Logic
                 const btn = document.getElementById('btnSave');
                 if(btn.innerText.includes("กำลังบันทึก")) {
                     btn.innerHTML = `<span>✅</span> บันทึกเรียบร้อย`;
@@ -328,47 +351,12 @@
                         btn.classList.remove("bg-yellow-600");
                     }, 2000);
                 }
-
-                const isOn = data.isWatering;
-                const isAuto = data.isAutoRun;
-                const anyScheduleEnabled = (data.schedules || scheds).some(s => s.en);
-                
-                const pumpText = document.getElementById('pumpStatusText');
-                const pumpIcon = document.getElementById('pumpStatusIcon');
-                
-                // Check change state for logging
-                if(pumpText.innerText !== (isOn ? "กำลังรดน้ำ" : "ปิดอยู่")) {
-                    addLog(isOn ? "💧 Pump STARTED" : "🛑 Pump STOPPED", isOn ? "info" : "send");
-                }
-
-                if (isOn) {
-                    pumpText.innerText = "กำลังรดน้ำ";
-                    pumpText.className = "font-bold text-green-600 text-lg";
-                    pumpIcon.className = "w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-lg shadow-green-200 animate-pulse";
-                } else {
-                    pumpText.innerText = "ปิดอยู่";
-                    pumpText.className = "font-bold text-gray-400 text-lg";
-                    pumpIcon.className = "w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-white";
-                }
-
-                const wStatus = document.getElementById('workStatus');
-                if(isOn) {
-                    if(isAuto) {
-                        wStatus.innerText = "Auto Running 🕒";
-                        wStatus.className = "text-xs font-bold text-white bg-blue-500 px-2 py-0.5 rounded inline-block";
-                    } else {
-                        wStatus.innerText = "Manual Running 🖐️";
-                        wStatus.className = "text-xs font-bold text-white bg-orange-500 px-2 py-0.5 rounded inline-block";
-                    }
-                } else {
-                    if(anyScheduleEnabled) {
-                        wStatus.innerText = "Auto Standby";
-                        wStatus.className = "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded inline-block border border-green-200";
-                    } else {
-                        wStatus.innerText = "Manual Only";
-                        wStatus.className = "text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded inline-block border border-gray-200";
-                    }
-                }
+            } 
+            
+            // 2. Handle Simple State (Quick Update) - *** เพิ่มส่วนนี้ ***
+            else if (msg.destinationName === topicState) {
+                const isOn = (msg.payloadString === "ON");
+                updatePumpStatusUI(isOn);
             }
         }
 
