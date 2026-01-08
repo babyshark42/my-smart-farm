@@ -3,19 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Farm (Debug Mode)</title>
+    <title>สั่งงานรดน้ำระยะไกล (Final + Log)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- ใช้ Library Paho MQTT เวอร์ชันเสถียร -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         body { background-color: #f0f2f5; font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; }
         .sched-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        /* Console Log Style */
-        .console-box { font-family: monospace; font-size: 10px; background: #1a1a1a; color: #00ff00; padding: 10px; height: 150px; overflow-y: auto; border-radius: 8px; margin-top: 20px; box-shadow: inset 0 0 10px #000; }
-        .log-time { color: #888; margin-right: 5px; }
-        .log-err { color: #ff5555; }
-        .log-succ { color: #55ffff; }
+        .sched-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        /* Scrollbar สำหรับ Log Box */
+        .log-scroll::-webkit-scrollbar { width: 6px; }
+        .log-scroll::-webkit-scrollbar-track { background: #1a1a1a; }
+        .log-scroll::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 3px; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
@@ -23,75 +22,165 @@
     <div class="w-full max-w-md md:max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
         
         <!-- Header -->
-        <div class="bg-gray-800 p-4 text-white flex justify-between items-center">
+        <div class="bg-gradient-to-r from-green-600 to-green-500 p-5 text-white relative shadow-md flex justify-between items-center">
             <div class="flex items-center gap-3">
-                <span class="text-2xl">🔧</span>
+                <span class="text-3xl">🥬</span>
                 <div>
-                    <h1 class="text-lg font-bold">Smart Farm Debugger</h1>
-                    <p id="connectionStatus" class="text-xs text-yellow-400">Connecting...</p>
+                    <h1 class="text-xl md:text-2xl font-bold tracking-tight">Smart Farm Control</h1>
+                    <p id="connectionStatus" class="text-xs text-green-100 font-medium bg-green-700/30 px-2 py-0.5 rounded-full inline-block mt-1">
+                        Connecting...
+                    </p>
                 </div>
             </div>
-            <div class="text-right">
-                <div class="text-xs text-gray-400">RSSI</div>
-                <div id="rssiText" class="font-bold text-green-400">-- dBm</div>
+            
+            <div class="flex flex-col items-end">
+                <div class="flex items-end gap-1 h-4" id="wifiIcon">
+                    <div class="w-1 h-1 bg-green-200/50 rounded-sm"></div>
+                    <div class="w-1 h-2 bg-green-200/50 rounded-sm"></div>
+                    <div class="w-1 h-3 bg-green-200/50 rounded-sm"></div>
+                    <div class="w-1 h-4 bg-green-200/50 rounded-sm"></div>
+                </div>
+                <span id="rssiText" class="text-[10px] text-green-100 mt-1">-- dBm</span>
             </div>
+            <div id="syncIndicator" class="absolute top-2 right-2 w-2 h-2 rounded-full bg-white shadow-lg opacity-0 transition-opacity duration-300"></div>
         </div>
 
         <div class="flex flex-col md:flex-row">
-            <!-- Left Side: Status -->
-            <div class="p-6 border-b md:border-b-0 md:border-r border-gray-100 bg-white md:w-1/3">
-                <div class="space-y-4">
-                    <div class="bg-gray-50 p-4 rounded-xl border flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-gray-500">สถานะปั๊ม</p>
-                            <p id="pumpStatusText" class="font-bold text-gray-700 text-lg">รอข้อมูล...</p>
+            
+            <!-- Left Side: Dashboard -->
+            <div class="p-6 border-b md:border-b-0 md:border-r border-gray-100 bg-white md:w-1/3 flex flex-col justify-between">
+                <div>
+                    <h2 class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">Dashboard Overview</h2>
+                    <div class="space-y-4">
+                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div id="pumpStatusIcon" class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center transition-colors duration-300">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500">สถานะปั๊มน้ำ</p>
+                                    <p id="pumpStatusText" class="font-bold text-gray-700 text-lg">ปิดอยู่</p>
+                                </div>
+                            </div>
                         </div>
-                        <div id="pumpStatusIcon" class="w-8 h-8 rounded-full bg-gray-300"></div>
+                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500">โหมดระบบ</p>
+                                    <div id="workStatus" class="text-xs font-bold text-gray-500 bg-gray-200 px-2 py-0.5 rounded inline-block">...</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="sendCommand('ON')" class="bg-green-600 text-white py-3 rounded-lg shadow font-bold hover:bg-green-700 active:scale-95 transition">เปิดน้ำ</button>
-                        <button onclick="sendCommand('OFF')" class="bg-red-600 text-white py-3 rounded-lg shadow font-bold hover:bg-red-700 active:scale-95 transition">ปิดน้ำ</button>
+                </div>
+
+                <div class="mt-8">
+                    <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">Manual Control</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="sendCommand('ON')" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1">
+                            <span class="text-2xl">💧</span><span>เปิดน้ำ</span>
+                        </button>
+                        <button onclick="sendCommand('OFF')" class="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1">
+                            <span class="text-2xl">🛑</span><span>ปิดน้ำ</span>
+                        </button>
                     </div>
                 </div>
             </div>
 
             <!-- Right Side: Schedule -->
-            <div class="p-6 bg-gray-50 md:w-2/3">
-                <h2 class="text-gray-700 font-bold mb-2">⏰ ตั้งเวลา</h2>
-                
+            <div class="p-6 bg-gray-50 md:w-2/3 md:bg-gray-50/50">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-gray-700 font-bold flex items-center">
+                        <span class="bg-blue-100 text-blue-600 p-1.5 rounded-lg mr-2">⏰</span> 
+                        ตั้งเวลาอัตโนมัติ
+                    </h2>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <!-- Schedule 1 -->
-                    <div class="bg-white p-3 rounded-lg border shadow-sm">
-                        <div class="flex justify-between mb-1"><span class="font-bold text-green-700 text-sm">เช้า</span> <input type="checkbox" id="en0" onchange="saveSchedule()"></div>
-                        <div class="flex gap-1 text-sm"><select id="h0" class="bg-gray-100 rounded"></select>:<select id="m0" class="bg-gray-100 rounded"></select> นาน <input type="number" id="du0" class="w-10 bg-gray-100 text-center" min="1"> นาที</div>
+                    <div class="sched-card bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
+                        <div class="flex justify-between items-center mb-4">
+                            <span class="font-bold text-gray-800 text-sm">ช่วงที่ 1 (เช้า)</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="en0" onchange="markEditing()" class="sr-only peer">
+                                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                            </label>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                <span class="text-xs text-gray-400">เวลาเริ่ม</span>
+                                <div class="flex items-center font-mono font-bold text-gray-700">
+                                    <select id="h0" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-green-600"></select>:<select id="m0" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-green-600"></select>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                <span class="text-xs text-gray-400">นาน (นาที)</span>
+                                <input type="number" id="du0" oninput="markEditing()" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-green-600" min="1" max="60">
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-100"><div class="flex justify-between" id="days0"></div></div>
                     </div>
+
                     <!-- Schedule 2 -->
-                    <div class="bg-white p-3 rounded-lg border shadow-sm">
-                        <div class="flex justify-between mb-1"><span class="font-bold text-blue-700 text-sm">เย็น</span> <input type="checkbox" id="en1" onchange="saveSchedule()"></div>
-                        <div class="flex gap-1 text-sm"><select id="h1" class="bg-gray-100 rounded"></select>:<select id="m1" class="bg-gray-100 rounded"></select> นาน <input type="number" id="du1" class="w-10 bg-gray-100 text-center" min="1"> นาที</div>
+                    <div class="sched-card bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                        <div class="flex justify-between items-center mb-4">
+                            <span class="font-bold text-gray-800 text-sm">ช่วงที่ 2 (เย็น)</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="en1" onchange="markEditing()" class="sr-only peer">
+                                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                            </label>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                <span class="text-xs text-gray-400">เวลาเริ่ม</span>
+                                <div class="flex items-center font-mono font-bold text-gray-700">
+                                    <select id="h1" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-blue-600"></select>:<select id="m1" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-blue-600"></select>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                <span class="text-xs text-gray-400">นาน (นาที)</span>
+                                <input type="number" id="du1" oninput="markEditing()" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-blue-600" min="1" max="60">
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-100"><div class="flex justify-between" id="days1"></div></div>
+                    </div>
+
+                    <div class="md:col-span-2 mt-2">
+                        <button id="btnSave" onclick="saveSchedule()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 transition transform active:scale-[0.98] flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                            บันทึกการตั้งค่าทั้งหมด
+                        </button>
                     </div>
                 </div>
-                
-                <button id="btnRefresh" onclick="requestSync()" class="w-full mt-4 bg-gray-200 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-300">🔄 กดเพื่อรีเฟรชข้อมูล (Sync)</button>
             </div>
         </div>
-
-        <!-- DEBUG CONSOLE -->
-        <div class="p-4 bg-gray-900">
-            <p class="text-xs text-gray-400 mb-1">System Log (ส่งรูปนี้มาถ้าใช้ไม่ได้):</p>
-            <div id="consoleLog" class="console-box"></div>
+        
+        <!-- SYSTEM LOG SECTION -->
+        <div class="bg-gray-900 p-4 border-t border-gray-800 rounded-b-2xl">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    System Log
+                </h3>
+                <button onclick="clearLog()" class="text-[10px] text-gray-500 hover:text-white transition">Clear Log</button>
+            </div>
+            <div id="consoleLog" class="log-scroll font-mono text-[11px] text-green-400 h-32 overflow-y-auto bg-black/30 rounded-lg p-3 space-y-1 shadow-inner">
+                <div class="text-gray-500 italic">-- System Ready --</div>
+            </div>
         </div>
     </div>
 
     <script>
-        // --- CONFIGURATION ---
         const mqttBroker = "broker.hivemq.com";
-        const mqttPort = 8884; // Port สำหรับ WSS (Secure WebSocket)
+        const mqttPort = 8884; 
         const clientId = "WebClient_" + Math.random().toString(16).substr(2, 8);
         
-        // Topic (ต้องตรงกับ ESP32 เป๊ะๆ)
-        const topicRoot = "farm/lettuce_001/"; // เช็ค Prefix
+        const topicRoot = "farm/my_home_9988/"; 
         const topicCmd = topicRoot + "cmd";
         const topicState = topicRoot + "state";
         const topicSetSched = topicRoot + "set_schedule";
@@ -99,168 +188,236 @@
         const topicDataSched = topicRoot + "schedule_data";
 
         let client;
-        let isConnected = false;
+        let scheds = [
+            { h:7, m:0, du:5, en:false, days:[true,true,true,true,true,true,true] },
+            { h:17, m:0, du:5, en:false, days:[true,true,true,true,true,true,true] }
+        ];
+        const dayLabels = ["อา","จ","อ","พ","พฤ","ศ","ส"];
+        let syncInterval, editTimeout, isEditing = false;
 
-        // UI Initialization
         function initSelectors(hid, mid) {
-            const h = document.getElementById(hid);
-            const m = document.getElementById(mid);
+            const h = document.getElementById(hid), m = document.getElementById(mid);
             for(let i=0; i<24; i++) h.innerHTML += `<option value="${i}">${i.toString().padStart(2,'0')}</option>`;
             for(let i=0; i<60; i++) m.innerHTML += `<option value="${i}">${i.toString().padStart(2,'0')}</option>`;
         }
-        initSelectors('h0', 'm0');
-        initSelectors('h1', 'm1');
+        initSelectors('h0', 'm0'); initSelectors('h1', 'm1');
 
-        // --- Logging Function ---
-        function log(msg, type="info") {
+        function renderDayButtons(slotIndex) {
+            const container = document.getElementById('days' + slotIndex);
+            container.innerHTML = '';
+            dayLabels.forEach((label, dayIdx) => {
+                const isActive = scheds[slotIndex].days[dayIdx];
+                let colorClass = isActive ? (slotIndex===0 ? "bg-green-500 text-white shadow-green-200" : "bg-blue-500 text-white shadow-blue-200") : "bg-white text-gray-400 border-gray-200";
+                container.innerHTML += `<div onclick="toggleDay(${slotIndex}, ${dayIdx})" class="w-8 h-8 rounded-full border flex items-center justify-center cursor-pointer text-xs font-bold transition-all select-none ${colorClass}">${label}</div>`;
+            });
+        }
+        renderDayButtons(0); renderDayButtons(1);
+
+        // --- Log Function ---
+        function addLog(msg, type="info") {
             const box = document.getElementById('consoleLog');
-            const time = new Date().toLocaleTimeString();
-            let colorClass = "";
-            if(type==="error") colorClass = "log-err";
-            if(type==="success") colorClass = "log-succ";
+            const time = new Date().toLocaleTimeString('th-TH', { hour12: false });
+            let color = "text-green-400";
+            if(type === "send") color = "text-blue-300";
+            if(type === "error") color = "text-red-400";
             
-            box.innerHTML += `<div><span class="log-time">[${time}]</span> <span class="${colorClass}">${msg}</span></div>`;
-            box.scrollTop = box.scrollHeight; // Auto scroll to bottom
+            const item = document.createElement('div');
+            item.className = color;
+            item.innerHTML = `<span class="text-gray-600 mr-2">[${time}]</span>${msg}`;
+            
+            box.appendChild(item);
+            box.scrollTop = box.scrollHeight;
         }
 
-        // --- MQTT Connection ---
-        function connectMQTT() {
-            log("Connecting to " + mqttBroker + ":" + mqttPort + "...", "info");
-            document.getElementById('connectionStatus').innerText = "Connecting...";
-            
-            try {
-                client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId);
-                client.onConnectionLost = onConnectionLost;
-                client.onMessageArrived = onMessageArrived;
-                
-                // Option สำหรับการเชื่อมต่อ
-                const options = {
-                    onSuccess: onConnect,
-                    onFailure: onFail,
-                    useSSL: true, // สำคัญมากสำหรับ GitHub Pages หรือเว็บ HTTPS
-                    timeout: 5,
-                    keepAliveInterval: 30
-                };
-                client.connect(options);
-            } catch (e) {
-                log("Error creating client: " + e.message, "error");
+        function clearLog() {
+            document.getElementById('consoleLog').innerHTML = '<div class="text-gray-500 italic">-- Log Cleared --</div>';
+        }
+
+        function markEditing() {
+            isEditing = true; clearTimeout(editTimeout);
+            const btn = document.getElementById('btnSave');
+            if (!btn.innerText.includes("Unsaved")) {
+                btn.innerHTML = `<span>✏️</span> มีการแก้ไข (ยังไม่บันทึก)`;
+                btn.classList.replace("bg-blue-600", "bg-yellow-600");
             }
+            editTimeout = setTimeout(() => { isEditing = false; }, 10000); 
+        }
+
+        function isInputFocused() {
+            const el = document.activeElement;
+            return (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT'));
+        }
+
+        function updateWifiSignal(rssi) {
+            const rssiVal = parseInt(rssi);
+            const bars = document.getElementById('wifiIcon').children;
+            document.getElementById('rssiText').innerText = rssiVal + " dBm";
+            for(let bar of bars) bar.className = "w-1 rounded-sm bg-green-200/50";
+            bars[0].classList.add(rssiVal > -90 ? "bg-white" : "bg-red-500");
+            bars[1].classList.add(rssiVal > -80 ? "bg-white" : "h-2");
+            bars[2].classList.add(rssiVal > -70 ? "bg-white" : "h-3");
+            bars[3].classList.add(rssiVal > -60 ? "bg-white" : "h-4");
+        }
+
+        function connectMQTT() {
+            document.getElementById('connectionStatus').innerText = "Connecting...";
+            document.getElementById('connectionStatus').className = "text-xs text-yellow-600 font-medium bg-yellow-100 px-2 py-0.5 rounded-full inline-block mt-1";
+            addLog("Connecting to Server...", "info");
+            
+            client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId);
+            client.onConnectionLost = onConnectionLost;
+            client.onMessageArrived = onMessageArrived;
+            client.connect({onSuccess:onConnect, useSSL:true});
         }
 
         function onConnect() {
-            isConnected = true;
-            log("✅ Connected to MQTT Broker!", "success");
             document.getElementById('connectionStatus').innerText = "Online";
-            document.getElementById('connectionStatus').className = "text-xs text-green-400 font-bold";
-
-            // Subscribe Topics
-            log("Subscribing to topics...", "info");
+            document.getElementById('connectionStatus').className = "text-xs text-green-700 font-medium bg-green-100 px-2 py-0.5 rounded-full inline-block mt-1 animate-pulse";
+            addLog("✅ Connected to Cloud!", "info");
             client.subscribe(topicState);
             client.subscribe(topicDataSched);
-            
-            // Request Initial Data
             requestSync();
-        }
-
-        function onFail(responseObject) {
-            isConnected = false;
-            log("❌ Connection Failed: " + responseObject.errorMessage, "error");
-            document.getElementById('connectionStatus').innerText = "Failed";
-            document.getElementById('connectionStatus').className = "text-xs text-red-500 font-bold";
-            // Retry in 5s
-            setTimeout(connectMQTT, 5000);
-        }
-
-        function onConnectionLost(responseObject) {
-            isConnected = false;
-            if (responseObject.errorCode !== 0) {
-                log("⚠️ Connection Lost: " + responseObject.errorMessage, "error");
-            }
-            document.getElementById('connectionStatus').innerText = "Offline";
-            document.getElementById('connectionStatus').className = "text-xs text-red-500 font-bold";
-            setTimeout(connectMQTT, 5000);
-        }
-
-        function onMessageArrived(message) {
-            const topic = message.destinationName;
-            const payload = message.payloadString;
-            log(`📥 Recv [${topic}]: ${payload.substring(0, 30)}...`, "info");
-
-            if (topic === topicDataSched) {
-                try {
-                    const data = JSON.parse(payload);
-                    log("Updating UI with JSON data...", "success");
-                    
-                    // RSSI
-                    if(data.rssi) document.getElementById('rssiText').innerText = data.rssi + " dBm";
-                    
-                    // Status
-                    const isOn = data.isWatering;
-                    document.getElementById('pumpStatusText').innerText = isOn ? "กำลังรดน้ำ" : "ปิดอยู่";
-                    document.getElementById('pumpStatusText').className = isOn ? "font-bold text-green-600 text-lg" : "font-bold text-gray-700 text-lg";
-                    document.getElementById('pumpStatusIcon').className = isOn ? "w-8 h-8 rounded-full bg-green-500 border-4 border-green-200" : "w-8 h-8 rounded-full bg-gray-300";
-
-                    // Schedules (Only update if not focused - simple check)
-                    if(document.activeElement.tagName !== "SELECT" && document.activeElement.tagName !== "INPUT") {
-                        if(data.schedules) {
-                            for(let i=0; i<2; i++) {
-                                document.getElementById('h'+i).value = data.schedules[i].h;
-                                document.getElementById('m'+i).value = data.schedules[i].m;
-                                document.getElementById('du'+i).value = data.schedules[i].du;
-                                document.getElementById('en'+i).checked = data.schedules[i].en;
-                            }
-                        }
-                    }
-                } catch(e) {
-                    log("Error parsing JSON: " + e.message, "error");
-                }
-            } else if (topic === topicState) {
-                const isOn = payload === "ON";
-                document.getElementById('pumpStatusText').innerText = isOn ? "กำลังรดน้ำ" : "ปิดอยู่";
-                document.getElementById('pumpStatusIcon').className = isOn ? "w-8 h-8 rounded-full bg-green-500 border-4 border-green-200" : "w-8 h-8 rounded-full bg-gray-300";
-            }
-        }
-
-        function sendCommand(cmd) {
-            if(!isConnected) { log("Cannot send: Not connected", "error"); return; }
-            log("📤 Sending CMD: " + cmd, "info");
-            let message = new Paho.MQTT.Message(cmd);
-            message.destinationName = topicCmd;
-            client.send(message);
+            clearInterval(syncInterval);
+            syncInterval = setInterval(requestSync, 5000);
         }
 
         function requestSync() {
-            if(!isConnected) return;
-            log("📤 Requesting Sync...", "info");
-            let message = new Paho.MQTT.Message("GET");
-            message.destinationName = topicGetSched;
-            client.send(message);
+            if(client && client.isConnected()) {
+                let msg = new Paho.MQTT.Message("GET");
+                msg.destinationName = topicGetSched;
+                client.send(msg);
+                const ind = document.getElementById('syncIndicator');
+                ind.style.opacity = 1; setTimeout(()=>ind.style.opacity=0, 500);
+            }
+        }
+
+        function onConnectionLost(res) {
+            document.getElementById('connectionStatus').innerText = "Offline";
+            document.getElementById('connectionStatus').className = "text-xs text-red-100 font-medium bg-red-500/50 px-2 py-0.5 rounded-full inline-block mt-1";
+            addLog("❌ Connection Lost", "error");
+            setTimeout(connectMQTT, 5000); 
+        }
+
+        function onMessageArrived(msg) {
+            if (msg.destinationName === topicDataSched) {
+                const data = JSON.parse(msg.payloadString);
+                
+                // --- Log Update ---
+                if(document.getElementById('pumpStatusText').innerText === "รอข้อมูล...") {
+                    addLog("📥 Received Initial Data", "info");
+                }
+
+                if(data.rssi) updateWifiSignal(data.rssi);
+                
+                if(data.schedules) {
+                    if (!isEditing && !isInputFocused()) { 
+                        scheds = data.schedules;
+                        updateUIFromData();
+                    }
+                }
+
+                const btn = document.getElementById('btnSave');
+                if(btn.innerText.includes("กำลังบันทึก")) {
+                    btn.innerHTML = `<span>✅</span> บันทึกเรียบร้อย`;
+                    btn.classList.replace("bg-gray-400", "bg-green-600");
+                    addLog("✅ Settings Saved to ESP32", "info");
+                    isEditing = false;
+                    setTimeout(() => {
+                        btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> บันทึกการตั้งค่าทั้งหมด`;
+                        btn.classList.replace("bg-green-600", "bg-blue-600");
+                        btn.classList.remove("bg-yellow-600");
+                    }, 2000);
+                }
+
+                const isOn = data.isWatering;
+                const isAuto = data.isAutoRun;
+                const anyScheduleEnabled = (data.schedules || scheds).some(s => s.en);
+                
+                const pumpText = document.getElementById('pumpStatusText');
+                const pumpIcon = document.getElementById('pumpStatusIcon');
+                
+                // Check change state for logging
+                if(pumpText.innerText !== (isOn ? "กำลังรดน้ำ" : "ปิดอยู่")) {
+                    addLog(isOn ? "💧 Pump STARTED" : "🛑 Pump STOPPED", isOn ? "info" : "send");
+                }
+
+                if (isOn) {
+                    pumpText.innerText = "กำลังรดน้ำ";
+                    pumpText.className = "font-bold text-green-600 text-lg";
+                    pumpIcon.className = "w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-lg shadow-green-200 animate-pulse";
+                } else {
+                    pumpText.innerText = "ปิดอยู่";
+                    pumpText.className = "font-bold text-gray-400 text-lg";
+                    pumpIcon.className = "w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-white";
+                }
+
+                const wStatus = document.getElementById('workStatus');
+                if(isOn) {
+                    if(isAuto) {
+                        wStatus.innerText = "Auto Running 🕒";
+                        wStatus.className = "text-xs font-bold text-white bg-blue-500 px-2 py-0.5 rounded inline-block";
+                    } else {
+                        wStatus.innerText = "Manual Running 🖐️";
+                        wStatus.className = "text-xs font-bold text-white bg-orange-500 px-2 py-0.5 rounded inline-block";
+                    }
+                } else {
+                    if(anyScheduleEnabled) {
+                        wStatus.innerText = "Auto Standby";
+                        wStatus.className = "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded inline-block border border-green-200";
+                    } else {
+                        wStatus.innerText = "Manual Only";
+                        wStatus.className = "text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded inline-block border border-gray-200";
+                    }
+                }
+            }
+        }
+
+        function updateUIFromData() {
+            for(let i=0; i<2; i++) {
+                document.getElementById('h'+i).value = scheds[i].h;
+                document.getElementById('m'+i).value = scheds[i].m;
+                document.getElementById('du'+i).value = scheds[i].du;
+                document.getElementById('en'+i).checked = scheds[i].en;
+                renderDayButtons(i);
+            }
+        }
+
+        function toggleDay(slot, day) {
+            markEditing();
+            scheds[slot].days[day] = !scheds[slot].days[day];
+            renderDayButtons(slot);
         }
 
         function saveSchedule() {
-            if(!isConnected) { log("Cannot save: Not connected", "error"); return; }
-            log("📤 Saving Schedule...", "info");
-            
-            let scheds = [];
+            if(!client || !client.isConnected()) return alert("ยังไม่เชื่อมต่อ Server");
+            document.activeElement.blur(); clearTimeout(editTimeout); 
+            const btn = document.getElementById('btnSave');
+            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> กำลังบันทึก...`;
+            btn.classList.replace("bg-blue-600", "bg-gray-400");
+            btn.classList.remove("bg-yellow-600");
+
             for(let i=0; i<2; i++) {
-                scheds.push({
-                    h: parseInt(document.getElementById('h'+i).value),
-                    m: parseInt(document.getElementById('m'+i).value),
-                    du: parseInt(document.getElementById('du'+i).value),
-                    en: document.getElementById('en'+i).checked,
-                    days: [true,true,true,true,true,true,true]
-                });
+                scheds[i].h = parseInt(document.getElementById('h'+i).value);
+                scheds[i].m = parseInt(document.getElementById('m'+i).value);
+                scheds[i].du = parseInt(document.getElementById('du'+i).value);
+                scheds[i].en = document.getElementById('en'+i).checked;
             }
             const payload = { schedules: scheds };
             let message = new Paho.MQTT.Message(JSON.stringify(payload));
             message.destinationName = topicSetSched;
             client.send(message);
+            addLog("📤 Sending Config...", "send");
         }
 
-        // Start Connection
-        log("System Init...", "info");
-        connectMQTT();
+        function sendCommand(cmd) {
+            if(!client || !client.isConnected()) return;
+            let message = new Paho.MQTT.Message(cmd);
+            message.destinationName = topicCmd;
+            client.send(message);
+            addLog("📤 Sent Command: " + cmd, "send");
+        }
 
+        connectMQTT();
     </script>
 </body>
 </html>
