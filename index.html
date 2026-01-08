@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>สั่งงานรดน้ำระยะไกล (Final + Log)</title>
+    <title>Smart Farm (Split Data)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
@@ -11,7 +11,6 @@
         body { background-color: #f0f2f5; font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; }
         .sched-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .sched-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        /* Scrollbar สำหรับ Log Box */
         .log-scroll::-webkit-scrollbar { width: 6px; }
         .log-scroll::-webkit-scrollbar-track { background: #1a1a1a; }
         .log-scroll::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 3px; }
@@ -26,7 +25,7 @@
             <div class="flex items-center gap-3">
                 <span class="text-3xl">🥬</span>
                 <div>
-                    <h1 class="text-xl md:text-2xl font-bold tracking-tight">Smart Farm Control</h1>
+                    <h1 class="text-xl md:text-2xl font-bold tracking-tight">Smart Farm</h1>
                     <p id="connectionStatus" class="text-xs text-green-100 font-medium bg-green-700/30 px-2 py-0.5 rounded-full inline-block mt-1">
                         Connecting...
                     </p>
@@ -50,7 +49,7 @@
             <!-- Left Side: Dashboard -->
             <div class="p-6 border-b md:border-b-0 md:border-r border-gray-100 bg-white md:w-1/3 flex flex-col justify-between">
                 <div>
-                    <h2 class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">Dashboard Overview</h2>
+                    <h2 class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">Dashboard</h2>
                     <div class="space-y-4">
                         <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
                             <div class="flex items-center gap-3">
@@ -59,7 +58,7 @@
                                 </div>
                                 <div>
                                     <p class="text-xs text-gray-500">สถานะปั๊มน้ำ</p>
-                                    <p id="pumpStatusText" class="font-bold text-gray-700 text-lg">ปิดอยู่</p>
+                                    <p id="pumpStatusText" class="font-bold text-gray-700 text-lg">รอข้อมูล...</p>
                                 </div>
                             </div>
                         </div>
@@ -81,10 +80,10 @@
                     <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">Manual Control</p>
                     <div class="grid grid-cols-2 gap-3">
                         <button onclick="sendCommand('ON')" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1">
-                            <span class="text-2xl">💧</span><span>เปิดน้ำ</span>
+                            <span class="text-2xl">💧</span><span>เปิด</span>
                         </button>
                         <button onclick="sendCommand('OFF')" class="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1">
-                            <span class="text-2xl">🛑</span><span>ปิดน้ำ</span>
+                            <span class="text-2xl">🛑</span><span>ปิด</span>
                         </button>
                     </div>
                 </div>
@@ -180,12 +179,15 @@
         const mqttPort = 8884; 
         const clientId = "WebClient_" + Math.random().toString(16).substr(2, 8);
         
+        // Topics (ต้องตรงกับ ESP32)
         const topicRoot = "farm/my_home_9988/"; 
         const topicCmd = topicRoot + "cmd";
-        const topicState = topicRoot + "state";
-        const topicSetSched = topicRoot + "set_schedule";
-        const topicGetSched = topicRoot + "get_schedule";
-        const topicDataSched = topicRoot + "schedule_data";
+        const topicSetSched = topicRoot + "set_conf";  // Topic ตั้งค่า
+        const topicGetData = topicRoot + "get_data";   // Topic ขอข้อมูล
+        
+        // Topic รับ (แยก 2 ท่อ)
+        const topicPubStatus = topicRoot + "status";   // รับชุดเล็ก (เร็ว)
+        const topicPubConfig = topicRoot + "config";   // รับชุดใหญ่ (Config)
 
         let client;
         let scheds = [
@@ -213,25 +215,20 @@
         }
         renderDayButtons(0); renderDayButtons(1);
 
-        // --- Log Function ---
         function addLog(msg, type="info") {
             const box = document.getElementById('consoleLog');
             const time = new Date().toLocaleTimeString('th-TH', { hour12: false });
             let color = "text-green-400";
             if(type === "send") color = "text-blue-300";
             if(type === "error") color = "text-red-400";
-            
             const item = document.createElement('div');
             item.className = color;
             item.innerHTML = `<span class="text-gray-600 mr-2">[${time}]</span>${msg}`;
-            
             box.appendChild(item);
             box.scrollTop = box.scrollHeight;
         }
 
-        function clearLog() {
-            document.getElementById('consoleLog').innerHTML = '<div class="text-gray-500 italic">-- Log Cleared --</div>';
-        }
+        function clearLog() { document.getElementById('consoleLog').innerHTML = '<div class="text-gray-500 italic">-- Log Cleared --</div>'; }
 
         function markEditing() {
             isEditing = true; clearTimeout(editTimeout);
@@ -259,11 +256,23 @@
             bars[3].classList.add(rssiVal > -60 ? "bg-white" : "h-4");
         }
 
+        function updatePumpStatusUI(isOn) {
+            const pumpText = document.getElementById('pumpStatusText');
+            const pumpIcon = document.getElementById('pumpStatusIcon');
+            const newText = isOn ? "กำลังรดน้ำ" : "ปิดอยู่";
+
+            if (pumpText.innerText !== newText) {
+                pumpText.innerText = newText;
+                pumpText.className = isOn ? "font-bold text-green-600 text-lg" : "font-bold text-gray-700 text-lg";
+                pumpIcon.className = isOn ? "w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-lg shadow-green-200 animate-pulse" : "w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-white";
+                addLog(isOn ? "💧 Pump STARTED" : "🛑 Pump STOPPED", "info");
+            }
+        }
+
         function connectMQTT() {
             document.getElementById('connectionStatus').innerText = "Connecting...";
             document.getElementById('connectionStatus').className = "text-xs text-yellow-600 font-medium bg-yellow-100 px-2 py-0.5 rounded-full inline-block mt-1";
             addLog("Connecting to Server...", "info");
-            
             client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId);
             client.onConnectionLost = onConnectionLost;
             client.onMessageArrived = onMessageArrived;
@@ -274,8 +283,11 @@
             document.getElementById('connectionStatus').innerText = "Online";
             document.getElementById('connectionStatus').className = "text-xs text-green-700 font-medium bg-green-100 px-2 py-0.5 rounded-full inline-block mt-1 animate-pulse";
             addLog("✅ Connected to Cloud!", "info");
-            client.subscribe(topicState);
-            client.subscribe(topicDataSched);
+            
+            // Subscribe แยกหัวข้อ
+            client.subscribe(topicPubStatus); // ชุดเล็ก
+            client.subscribe(topicPubConfig); // ชุดใหญ่
+            
             requestSync();
             clearInterval(syncInterval);
             syncInterval = setInterval(requestSync, 5000);
@@ -284,7 +296,7 @@
         function requestSync() {
             if(client && client.isConnected()) {
                 let msg = new Paho.MQTT.Message("GET");
-                msg.destinationName = topicGetSched;
+                msg.destinationName = topicGetData;
                 client.send(msg);
                 const ind = document.getElementById('syncIndicator');
                 ind.style.opacity = 1; setTimeout(()=>ind.style.opacity=0, 500);
@@ -299,15 +311,31 @@
         }
 
         function onMessageArrived(msg) {
-            if (msg.destinationName === topicDataSched) {
+            // 1. รับ STATUS (ข้อมูลชุดเล็ก - มาเร็ว)
+            if (msg.destinationName === topicPubStatus) {
                 const data = JSON.parse(msg.payloadString);
                 
-                // --- Log Update ---
-                if(document.getElementById('pumpStatusText').innerText === "รอข้อมูล...") {
-                    addLog("📥 Received Initial Data", "info");
-                }
-
                 if(data.rssi) updateWifiSignal(data.rssi);
+                
+                const isOn = (data.pump === 1);
+                const isAuto = (data.auto === 1);
+                
+                updatePumpStatusUI(isOn);
+
+                const wStatus = document.getElementById('workStatus');
+                if(isOn) {
+                    wStatus.innerText = isAuto ? "Auto Running 🕒" : "Manual Running 🖐️";
+                    wStatus.className = isAuto ? "text-xs font-bold text-white bg-blue-500 px-2 py-0.5 rounded inline-block" : "text-xs font-bold text-white bg-orange-500 px-2 py-0.5 rounded inline-block";
+                } else {
+                    wStatus.innerText = "Standby / Manual";
+                    wStatus.className = "text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded inline-block border border-gray-200";
+                }
+            } 
+            
+            // 2. รับ CONFIG (ข้อมูลชุดใหญ่ - มาตอนขอหรือเซฟ)
+            else if (msg.destinationName === topicPubConfig) {
+                addLog("📥 Received Config", "info");
+                const data = JSON.parse(msg.payloadString);
                 
                 if(data.schedules) {
                     if (!isEditing && !isInputFocused()) { 
@@ -316,58 +344,18 @@
                     }
                 }
 
+                // ปลดล็อคปุ่ม Save
                 const btn = document.getElementById('btnSave');
                 if(btn.innerText.includes("กำลังบันทึก")) {
                     btn.innerHTML = `<span>✅</span> บันทึกเรียบร้อย`;
                     btn.classList.replace("bg-gray-400", "bg-green-600");
-                    addLog("✅ Settings Saved to ESP32", "info");
+                    addLog("✅ Config Saved!", "info");
                     isEditing = false;
                     setTimeout(() => {
                         btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> บันทึกการตั้งค่าทั้งหมด`;
                         btn.classList.replace("bg-green-600", "bg-blue-600");
                         btn.classList.remove("bg-yellow-600");
                     }, 2000);
-                }
-
-                const isOn = data.isWatering;
-                const isAuto = data.isAutoRun;
-                const anyScheduleEnabled = (data.schedules || scheds).some(s => s.en);
-                
-                const pumpText = document.getElementById('pumpStatusText');
-                const pumpIcon = document.getElementById('pumpStatusIcon');
-                
-                // Check change state for logging
-                if(pumpText.innerText !== (isOn ? "กำลังรดน้ำ" : "ปิดอยู่")) {
-                    addLog(isOn ? "💧 Pump STARTED" : "🛑 Pump STOPPED", isOn ? "info" : "send");
-                }
-
-                if (isOn) {
-                    pumpText.innerText = "กำลังรดน้ำ";
-                    pumpText.className = "font-bold text-green-600 text-lg";
-                    pumpIcon.className = "w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-lg shadow-green-200 animate-pulse";
-                } else {
-                    pumpText.innerText = "ปิดอยู่";
-                    pumpText.className = "font-bold text-gray-400 text-lg";
-                    pumpIcon.className = "w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-white";
-                }
-
-                const wStatus = document.getElementById('workStatus');
-                if(isOn) {
-                    if(isAuto) {
-                        wStatus.innerText = "Auto Running 🕒";
-                        wStatus.className = "text-xs font-bold text-white bg-blue-500 px-2 py-0.5 rounded inline-block";
-                    } else {
-                        wStatus.innerText = "Manual Running 🖐️";
-                        wStatus.className = "text-xs font-bold text-white bg-orange-500 px-2 py-0.5 rounded inline-block";
-                    }
-                } else {
-                    if(anyScheduleEnabled) {
-                        wStatus.innerText = "Auto Standby";
-                        wStatus.className = "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded inline-block border border-green-200";
-                    } else {
-                        wStatus.innerText = "Manual Only";
-                        wStatus.className = "text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded inline-block border border-gray-200";
-                    }
                 }
             }
         }
