@@ -1,245 +1,558 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="th" class="">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Farm (V1.0)</title>
+    <title>Smart Farm </title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script> tailwind.config = { darkMode: 'class' } </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #f0f2f5; font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; }
         .sched-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .sched-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .log-scroll::-webkit-scrollbar { width: 6px; }
-        .log-scroll::-webkit-scrollbar-track { background: #1a1a1a; }
-        .log-scroll::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 3px; }
+        .sched-card:hover { transform: translateY(-4px); box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.15); }
+        .log-scroll::-webkit-scrollbar { width: 4px; }
+        .log-scroll::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 2px; }
+        @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+        .pump-active { animation: pulse-ring 2s infinite; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+        .cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 0.75rem; position: relative; background: rgba(0,0,0,0.03); }
+        .cal-watered { background-color: #10B981; color: white; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.4); }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
+<body class="min-h-screen flex flex-col items-center p-4 bg-slate-200 dark:bg-slate-950 transition-colors duration-500">
 
-    <div class="w-full max-w-md md:max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
-        <!-- Header -->
-        <div class="bg-gradient-to-r from-green-600 to-green-500 p-5 text-white relative shadow-md flex justify-between items-center">
-            <div class="flex items-center gap-3">
-                <span class="text-3xl">🥬</span>
-                <div>
-                    <h1 class="text-xl md:text-2xl font-bold tracking-tight">Smart Farm</h1>
-                    <p id="connectionStatus" class="text-xs text-green-100 font-medium bg-green-700/30 px-2 py-0.5 rounded-full inline-block mt-1">Connecting...</p>
-                </div>
-            </div>
-            <div class="flex flex-col items-end">
-                <!-- WiFi Icon -->
-                <div class="flex items-end gap-1 h-4" id="wifiIcon">
-                    <div class="w-1 h-1 bg-green-200/50 rounded-sm"></div>
-                    <div class="w-1 h-2 bg-green-200/50 rounded-sm"></div>
-                    <div class="w-1 h-3 bg-green-200/50 rounded-sm"></div>
-                    <div class="w-1 h-4 bg-green-200/50 rounded-sm"></div>
-                </div>
-                <span id="rssiText" class="text-[10px] text-green-100 mt-1">-- dBm</span>
-            </div>
-            <div id="syncIndicator" class="absolute top-2 right-2 w-2 h-2 rounded-full bg-white shadow-lg opacity-0 transition-opacity duration-300"></div>
-        </div>
-
-        <div class="flex flex-col md:flex-row">
-            <!-- Dashboard -->
-            <div class="p-6 border-b md:border-b-0 md:border-r border-gray-100 bg-white md:w-1/3 flex flex-col justify-between">
-                <div>
-                    <h2 class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">Dashboard</h2>
-                    <div class="space-y-4">
-                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
-                            <div class="flex items-center gap-3">
-                                <div id="pumpStatusIcon" class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center transition-colors duration-300">
-                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-gray-500">สถานะปั๊มน้ำ</p>
-                                    <p id="pumpStatusText" class="font-bold text-gray-700 text-lg">รอข้อมูล...</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-500">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-gray-500">โหมดระบบ</p>
-                                    <div id="workStatus" class="text-xs font-bold text-gray-500 bg-gray-200 px-2 py-0.5 rounded inline-block">...</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-8">
-                    <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">Manual Control</p>
-                    <div class="grid grid-cols-2 gap-3">
-                        <button onclick="sendCommand('ON')" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1"><span class="text-2xl">💧</span><span>เปิด</span></button>
-                        <button onclick="sendCommand('OFF')" class="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-200 transition transform active:scale-95 flex flex-col items-center justify-center gap-1"><span class="text-2xl">🛑</span><span>ปิด</span></button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Schedule -->
-            <div class="p-6 bg-gray-50 md:w-2/3 md:bg-gray-50/50">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-gray-700 font-bold flex items-center"><span class="bg-blue-100 text-blue-600 p-1.5 rounded-lg mr-2">⏰</span> ตั้งเวลาอัตโนมัติ</h2>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Sched 1 -->
-                    <div class="sched-card bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                        <div class="flex justify-between items-center mb-4"><span class="font-bold text-gray-800 text-sm">ช่วงที่ 1 (เช้า)</span><label class="relative inline-flex items-center cursor-pointer"><input type="checkbox" id="en0" onchange="markEditing()" class="sr-only peer"><div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div></label></div>
-                        <div class="space-y-3"><div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100"><span class="text-xs text-gray-400">เวลาเริ่ม</span><div class="flex items-center font-mono font-bold text-gray-700"><select id="h0" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-green-600"></select>:<select id="m0" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-green-600"></select></div></div><div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100"><span class="text-xs text-gray-400">นาน (นาที)</span><input type="number" id="du0" oninput="markEditing()" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-green-600" min="1" max="60"></div></div><div class="mt-4 pt-4 border-t border-gray-100"><div class="flex justify-between" id="days0"></div></div>
-                    </div>
-                    <!-- Sched 2 -->
-                    <div class="sched-card bg-white p-5 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                        <div class="flex justify-between items-center mb-4"><span class="font-bold text-gray-800 text-sm">ช่วงที่ 2 (เย็น)</span><label class="relative inline-flex items-center cursor-pointer"><input type="checkbox" id="en1" onchange="markEditing()" class="sr-only peer"><div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div></label></div>
-                        <div class="space-y-3"><div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100"><span class="text-xs text-gray-400">เวลาเริ่ม</span><div class="flex items-center font-mono font-bold text-gray-700"><select id="h1" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-blue-600"></select>:<select id="m1" onchange="markEditing()" class="bg-transparent outline-none cursor-pointer hover:text-blue-600"></select></div></div><div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100"><span class="text-xs text-gray-400">นาน (นาที)</span><input type="number" id="du1" oninput="markEditing()" class="w-12 bg-transparent font-mono font-bold text-right outline-none text-gray-700 hover:text-blue-600" min="1" max="60"></div></div><div class="mt-4 pt-4 border-t border-gray-100"><div class="flex justify-between" id="days1"></div></div>
-                    </div>
-                    <div class="md:col-span-2 mt-2"><button id="btnSave" onclick="saveSchedule()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 transition transform active:scale-[0.98] flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>บันทึกการตั้งค่าทั้งหมด</button></div>
-                </div>
-            </div>
-        </div>
+    <div class="w-full max-w-6xl bg-gray-50 dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-colors duration-300 border border-gray-200 dark:border-gray-800">
         
-        <!-- Log -->
-        <div class="bg-gray-900 p-4 border-t border-gray-800 rounded-b-2xl">
-            <div class="flex justify-between items-center mb-2"><h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> System Log</h3><button onclick="clearLog()" class="text-[10px] text-gray-500 hover:text-white transition">Clear Log</button></div>
-            <div id="consoleLog" class="log-scroll font-mono text-[11px] text-green-400 h-32 overflow-y-auto bg-black/30 rounded-lg p-3 space-y-1 shadow-inner"><div class="text-gray-500 italic">-- System Ready --</div></div>
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-emerald-600 to-teal-600 p-5 text-white shadow-lg relative z-10 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <div class="bg-white/20 p-2.5 rounded-xl backdrop-blur-sm shadow-inner">
+                    <span class="text-2xl">🥬</span>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white drop-shadow-md">Smart Farm</h1>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <span class="w-2 h-2 rounded-full bg-green-300 animate-pulse"></span>
+                        <p id="connectionStatus" class="text-[11px] font-medium text-green-100">Connecting...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <button onclick="toggleTheme()" class="p-2.5 rounded-full bg-white/10 hover:bg-white/20 transition backdrop-blur-md border border-white/10">
+                    <span id="themeIcon">🌙</span>
+                </button>
+                <div class="flex flex-col items-end">
+                    <div class="flex items-end gap-0.5 h-3.5" id="wifiIcon">
+                        <div class="w-1.5 h-1.5 bg-white/30 rounded-sm"></div><div class="w-1.5 h-2.5 bg-white/30 rounded-sm"></div>
+                        <div class="w-1.5 h-3.5 bg-white/30 rounded-sm"></div><div class="w-1.5 h-[18px] bg-white/30 rounded-sm"></div>
+                    </div>
+                    <span id="rssiText" class="text-[10px] text-green-100 font-mono mt-0.5">-- dBm</span>
+                </div>
+            </div>
+            <div id="syncIndicator" class="absolute top-3 right-3 w-2 h-2 rounded-full bg-white opacity-0 transition-opacity"></div>
         </div>
+
+        <!-- Main Grid Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-0">
+            
+            <!-- LEFT COLUMN: Control Center (Col Span 5) -->
+            <div class="lg:col-span-5 p-6 space-y-6">
+                
+                <!-- 1. Control Center -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 dark:border-gray-700 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-green-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+                    
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Status Control</h2>
+                            <div class="flex items-center gap-3">
+                                <div id="pumpStatusDot" class="w-4 h-4 rounded-full bg-gray-300 shadow-sm border-2 border-white dark:border-gray-700 transition-colors duration-300"></div>
+                                <span id="pumpStatusText" class="text-3xl font-extrabold text-gray-700 dark:text-gray-200 tracking-tight">ปิดอยู่</span>
+                            </div>
+                            <div id="workStatus" class="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-md bg-gray-100 dark:bg-gray-700/50 text-xs font-medium text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
+                                <span>●</span> Standby
+                            </div>
+                        </div>
+                        <div id="pumpIconLarge" class="w-20 h-20 rounded-2xl bg-gray-50 dark:bg-gray-700/50 flex items-center justify-center text-4xl shadow-inner transition-all duration-500 border border-gray-100 dark:border-gray-600 grayscale opacity-50">
+                            💧
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <button onclick="checkWeatherAndRun('ON')" class="relative overflow-hidden group bg-emerald-500 hover:bg-emerald-600 text-white p-4 rounded-xl shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98] border-b-4 border-emerald-700 active:border-b-0 active:translate-y-1">
+                            <div class="flex flex-col items-center gap-1">
+                                <span class="text-2xl drop-shadow-md">🌊</span>
+                                <span class="font-bold text-lg">เปิดน้ำ</span>
+                            </div>
+                        </button>
+                        <button onclick="sendCommand('OFF')" class="relative overflow-hidden group bg-rose-500 hover:bg-rose-600 text-white p-4 rounded-xl shadow-lg shadow-rose-500/20 transition-all active:scale-[0.98] border-b-4 border-rose-700 active:border-b-0 active:translate-y-1">
+                            <div class="flex flex-col items-center gap-1">
+                                <span class="text-2xl drop-shadow-md">⛔</span>
+                                <span class="font-bold text-lg">ปิดน้ำ</span>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2. Schedule -->
+                <div>
+                    <h2 class="text-gray-600 dark:text-gray-400 font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wide ml-1">
+                        ⏰ ตั้งเวลาอัตโนมัติ
+                    </h2>
+                    
+                    <div class="space-y-4">
+                        <!-- Sched 1 -->
+                        <div class="sched-card bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md border border-gray-200 dark:border-gray-700 relative group">
+                            <div class="absolute left-0 top-4 bottom-4 w-1 bg-green-500 rounded-r-full"></div>
+                            <div class="ml-3">
+                                <div class="flex justify-between items-center mb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-1.5 rounded-lg text-lg">☀️</span>
+                                        <span class="font-bold text-gray-700 dark:text-gray-200">ช่วงเช้า</span>
+                                    </div>
+                                    <label class="inline-flex items-center cursor-pointer scale-110">
+                                        <input type="checkbox" id="en0" onchange="markEditing()" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 shadow-inner"></div>
+                                    </label>
+                                </div>
+                                <div class="flex gap-3 mb-3">
+                                    <div class="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 flex items-center shadow-sm">
+                                        <select id="h0" onchange="markEditing()" class="bg-transparent font-mono font-bold text-lg outline-none text-gray-700 dark:text-gray-200 cursor-pointer"></select>
+                                        <span class="mx-1 text-gray-400">:</span>
+                                        <select id="m0" onchange="markEditing()" class="bg-transparent font-mono font-bold text-lg outline-none text-gray-700 dark:text-gray-200 cursor-pointer"></select>
+                                    </div>
+                                    <div class="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 flex items-center flex-1 shadow-sm">
+                                        <input type="number" id="du0" oninput="markEditing()" class="bg-transparent font-mono font-bold text-lg w-full text-right outline-none text-gray-700 dark:text-gray-200" min="1">
+                                        <span class="text-xs ml-2 text-gray-500 font-medium">นาที</span>
+                                    </div>
+                                </div>
+                                <div class="flex justify-between gap-1 pt-2 border-t border-gray-100 dark:border-gray-700" id="days0"></div>
+                            </div>
+                        </div>
+
+                        <!-- Sched 2 -->
+                        <div class="sched-card bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md border border-gray-200 dark:border-gray-700 relative group">
+                            <div class="absolute left-0 top-4 bottom-4 w-1 bg-blue-500 rounded-r-full"></div>
+                            <div class="ml-3">
+                                <div class="flex justify-between items-center mb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-1.5 rounded-lg text-lg">🌙</span>
+                                        <span class="font-bold text-gray-700 dark:text-gray-200">ช่วงเย็น</span>
+                                    </div>
+                                    <label class="inline-flex items-center cursor-pointer scale-110">
+                                        <input type="checkbox" id="en1" onchange="markEditing()" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner"></div>
+                                    </label>
+                                </div>
+                                <div class="flex gap-3 mb-3">
+                                    <div class="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 flex items-center shadow-sm">
+                                        <select id="h1" onchange="markEditing()" class="bg-transparent font-mono font-bold text-lg outline-none text-gray-700 dark:text-gray-200 cursor-pointer"></select>
+                                        <span class="mx-1 text-gray-400">:</span>
+                                        <select id="m1" onchange="markEditing()" class="bg-transparent font-mono font-bold text-lg outline-none text-gray-700 dark:text-gray-200 cursor-pointer"></select>
+                                    </div>
+                                    <div class="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 flex items-center flex-1 shadow-sm">
+                                        <input type="number" id="du1" oninput="markEditing()" class="bg-transparent font-mono font-bold text-lg w-full text-right outline-none text-gray-700 dark:text-gray-200" min="1">
+                                        <span class="text-xs ml-2 text-gray-500 font-medium">นาที</span>
+                                    </div>
+                                </div>
+                                <div class="flex justify-between gap-1 pt-2 border-t border-gray-100 dark:border-gray-700" id="days1"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="btnSave" onclick="saveSchedule()" class="w-full mt-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-500/20 transition flex items-center justify-center gap-2 active:scale-[0.98]">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                        บันทึกการตั้งค่า
+                    </button>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Environment & History (Col Span 7) -->
+            <div class="lg:col-span-7 p-6 space-y-6 lg:border-l border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
+                
+                <!-- Environment Cards (Grid 2x2) -->
+                <div class="grid grid-cols-2 gap-5">
+                    <!-- Weather -->
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md border border-blue-100 dark:border-gray-700 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        <p class="text-[10px] text-blue-500 dark:text-blue-400 font-bold uppercase mb-2">สภาพอากาศ</p>
+                        <div class="flex justify-between items-end">
+                            <div>
+                                <h3 id="weatherTemp" class="text-3xl font-extrabold text-gray-800 dark:text-white">--°</h3>
+                                <p id="weatherDesc" class="text-xs text-gray-500 dark:text-gray-400 mt-1">กำลังโหลด...</p>
+                            </div>
+                            <div id="weatherIcon" class="text-5xl weather-icon drop-shadow-sm">🌤️</div>
+                        </div>
+                        <button onclick="getWeather()" class="absolute top-2 right-2 text-gray-300 hover:text-blue-500 transition">↻</button>
+                    </div>
+                    
+                    <!-- Rain (Current) -->
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md border border-cyan-100 dark:border-gray-700 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-cyan-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        <p class="text-[10px] text-cyan-500 dark:text-cyan-400 font-bold uppercase mb-2">ปริมาณฝน (1ชม.)</p>
+                        <div class="flex justify-between items-end">
+                            <div>
+                                <h3 id="rainValue" class="text-3xl font-extrabold text-gray-800 dark:text-white">0.0</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">มิลลิเมตร</p>
+                            </div>
+                            <div class="text-5xl opacity-80">🌧️</div>
+                        </div>
+                    </div>
+
+                    <!-- Humidity -->
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md border border-indigo-100 dark:border-gray-700 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        <p class="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold uppercase mb-2">ความชื้น</p>
+                        <div class="flex justify-between items-end">
+                            <div>
+                                <h3 id="humidValue" class="text-3xl font-extrabold text-gray-800 dark:text-white">--%</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">สัมพัทธ์</p>
+                            </div>
+                            <div class="text-5xl opacity-80">💧</div>
+                        </div>
+                    </div>
+                    
+                    <!-- PM2.5 -->
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md border border-orange-100 dark:border-gray-700 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        <p class="text-[10px] text-orange-500 dark:text-orange-400 font-bold uppercase mb-2">ฝุ่น PM2.5</p>
+                        <div class="flex justify-between items-end relative z-10">
+                            <div>
+                                <h3 id="pm25Value" class="text-3xl font-extrabold text-gray-800 dark:text-white">--</h3>
+                                <div id="pm25Badge" class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md inline-block mt-1 font-medium border border-gray-200">รอข้อมูล</div>
+                            </div>
+                            <div class="text-4xl opacity-80">😷</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart Section -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-md border border-gray-100 dark:border-gray-700">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                            <span class="w-1.5 h-4 bg-purple-500 rounded-full"></span> สถิติ & แนวโน้ม
+                        </h2>
+                        <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 space-x-1">
+                            <button onclick="updateChartType('temp')" id="btnChartTemp" class="px-3 py-1 text-xs rounded-md font-bold transition">อุณหภูมิ</button>
+                            <button onclick="updateChartType('rain_prob')" id="btnChartProb" class="px-3 py-1 text-xs rounded-md font-bold transition">โอกาสฝน</button>
+                            <button onclick="updateChartType('pm25')" id="btnChartPM" class="px-3 py-1 text-xs rounded-md font-bold transition">ฝุ่น</button>
+                        </div>
+                    </div>
+                    <div class="h-64 w-full">
+                        <canvas id="historyChart"></canvas>
+                    </div>
+                    <p id="chartDesc" class="text-center text-[10px] text-gray-400 mt-2">แสดงข้อมูลย้อนหลัง 7 วัน</p>
+                </div>
+
+                <!-- Watering History Calendar -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-md border border-gray-100 dark:border-gray-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                            <span class="w-1.5 h-4 bg-teal-500 rounded-full"></span> ประวัติการทำงาน
+                        </h2>
+                        <button onclick="clearHistory()" class="text-[10px] text-red-400 hover:text-red-500 font-medium transition">ล้างข้อมูล</button>
+                    </div>
+                    <div id="calendar" class="calendar-grid text-gray-600 dark:text-gray-400"></div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Debug Log -->
+        <div class="bg-gray-900 border-t border-gray-800 w-full">
+            <div class="flex justify-between items-center px-4 py-2 cursor-pointer hover:bg-gray-800 transition" onclick="document.getElementById('consoleLog').classList.toggle('hidden')">
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <span class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">System Activity Log</span>
+                </div>
+                <span class="text-gray-500 text-xs">▼</span>
+            </div>
+            <div id="consoleLog" class="h-32 overflow-y-auto hidden px-4 py-2 space-y-1 font-mono text-[11px] text-green-400/80 bg-black/20">
+                <div class="text-gray-500 italic">-- System Ready --</div>
+            </div>
+        </div>
+
     </div>
 
     <script>
-        const mqttBroker = "broker.hivemq.com";
-        const mqttPort = 8884; 
-        const clientId = "WebClient_" + Math.random().toString(16).substr(2, 8);
+        const mqttBroker = "broker.hivemq.com", mqttPort = 8884, clientId = "Web_" + Math.random().toString(16).substr(2, 8);
         const topicRoot = "farm/my_home_9988/"; 
-        const topicCmd = topicRoot + "cmd";
-        const topicSetSched = topicRoot + "set_conf";  
-        const topicGetData = topicRoot + "get_data";   
-        const topicPubStatus = topicRoot + "status";   
-        const topicPubConfig = topicRoot + "config";   
+        const topicCmd=topicRoot+"cmd", topicSetSched=topicRoot+"set_conf", topicGetData=topicRoot+"get_data", topicPubStatus=topicRoot+"status", topicPubConfig=topicRoot+"config";   
+        const FARM_LAT = 14.1378, FARM_LON = 100.6251; 
 
-        let client;
-        let scheds = [{ h:7, m:0, du:5, en:false, days:[true,true,true,true,true,true,true] },{ h:17, m:0, du:5, en:false, days:[true,true,true,true,true,true,true] }];
+        let client, scheds = [{ h:7, m:0, du:5, en:false, days:[true,true,true,true,true,true,true] },{ h:17, m:0, du:5, en:false, days:[true,true,true,true,true,true,true] }];
         const dayLabels = ["อา","จ","อ","พ","พฤ","ศ","ส"];
-        let syncInterval, editTimeout, isEditing = false;
+        let isEditing = false, editTimeout, isRaining = false; 
+        
+        let chartInstance = null;
+        let historyData = { dates:[], temp:[], pm25:[], rainProb:[], rainAmount:[], timeline:[] };
 
-        function initSelectors(hid, mid) { const h = document.getElementById(hid), m = document.getElementById(mid); for(let i=0; i<24; i++) h.innerHTML += `<option value="${i}">${i.toString().padStart(2,'0')}</option>`; for(let i=0; i<60; i++) m.innerHTML += `<option value="${i}">${i.toString().padStart(2,'0')}</option>`; }
+        // --- Init ---
+        function initSelectors(hid, mid) { const h=document.getElementById(hid), m=document.getElementById(mid); for(let i=0;i<24;i++) h.innerHTML+=`<option value="${i}">${i.toString().padStart(2,'0')}</option>`; for(let i=0;i<60;i++) m.innerHTML+=`<option value="${i}">${i.toString().padStart(2,'0')}</option>`; }
         initSelectors('h0', 'm0'); initSelectors('h1', 'm1');
 
-        function renderDayButtons(slotIndex) { const container = document.getElementById('days' + slotIndex); container.innerHTML = ''; dayLabels.forEach((label, dayIdx) => { const isActive = scheds[slotIndex].days[dayIdx]; let colorClass = isActive ? (slotIndex===0 ? "bg-green-500 text-white shadow-green-200" : "bg-blue-500 text-white shadow-blue-200") : "bg-white text-gray-400 border-gray-200"; container.innerHTML += `<div onclick="toggleDay(${slotIndex}, ${dayIdx})" class="w-8 h-8 rounded-full border flex items-center justify-center cursor-pointer text-xs font-bold transition-all select-none ${colorClass}">${label}</div>`; }); }
+        function renderDayButtons(si) { 
+            const c = document.getElementById('days' + si); c.innerHTML = ''; 
+            dayLabels.forEach((l, di) => { 
+                const act = scheds[si].days[di]; 
+                const cls = act ? (si===0?"bg-green-500 text-white shadow-green-200 dark:shadow-none":"bg-blue-500 text-white shadow-blue-200 dark:shadow-none") : "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500"; 
+                c.innerHTML += `<div onclick="toggleDay(${si},${di})" class="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold cursor-pointer transition-all hover:scale-110 ${cls}">${l}</div>`; 
+            }); 
+        }
         renderDayButtons(0); renderDayButtons(1);
 
-        function addLog(msg, type="info") { const box = document.getElementById('consoleLog'); const time = new Date().toLocaleTimeString('th-TH', { hour12: false }); let color = "text-green-400"; if(type === "send") color = "text-blue-300"; if(type === "error") color = "text-red-400"; const item = document.createElement('div'); item.className = color; item.innerHTML = `<span class="text-gray-600 mr-2">[${time}]</span>${msg}`; box.appendChild(item); box.scrollTop = box.scrollHeight; }
-        function clearLog() { document.getElementById('consoleLog').innerHTML = '<div class="text-gray-500 italic">-- Log Cleared --</div>'; }
-        function markEditing() { isEditing = true; clearTimeout(editTimeout); const btn = document.getElementById('btnSave'); if (!btn.innerText.includes("Unsaved")) { btn.innerHTML = `<span>✏️</span> มีการแก้ไข (ยังไม่บันทึก)`; btn.classList.replace("bg-blue-600", "bg-yellow-600"); } editTimeout = setTimeout(() => { isEditing = false; }, 10000); }
-        function isInputFocused() { const el = document.activeElement; return (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT')); }
-        
-        // --- FIX: WiFi Signal Update ---
-        function updateWifiSignal(rssi) { 
-            const rssiVal = parseInt(rssi); 
-            const bars = document.getElementById('wifiIcon').children; 
-            document.getElementById('rssiText').innerText = rssiVal + " dBm"; 
-            
-            // Set Bars Logic: Keep height classes intact
-            bars[0].className = "w-1 h-1 rounded-sm " + (rssiVal > -90 ? "bg-white" : "bg-red-500");
-            bars[1].className = "w-1 h-2 rounded-sm " + (rssiVal > -80 ? "bg-white" : "bg-green-200/50");
-            bars[2].className = "w-1 h-3 rounded-sm " + (rssiVal > -70 ? "bg-white" : "bg-green-200/50");
-            bars[3].className = "w-1 h-4 rounded-sm " + (rssiVal > -60 ? "bg-white" : "bg-green-200/50");
+        // --- Theme & Calendar ---
+        function toggleTheme() { document.documentElement.classList.toggle('dark'); const d = document.documentElement.classList.contains('dark'); document.getElementById('themeIcon').innerText=d?"☀️":"🌙"; localStorage.setItem('theme', d?'dark':'light'); updateChartTheme(); }
+        if (localStorage.getItem('theme') === 'dark') { document.documentElement.classList.add('dark'); document.getElementById('themeIcon').innerText = "☀️"; }
+
+        function logWatering() {
+            const d = new Date(), k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            let h = JSON.parse(localStorage.getItem('waterHistory') || '[]');
+            if (!h.includes(k)) { h.push(k); localStorage.setItem('waterHistory', JSON.stringify(h)); renderCalendar(); }
         }
-        
-        function updatePumpStatusUI(isOn) {
-            const pumpText = document.getElementById('pumpStatusText');
-            const pumpIcon = document.getElementById('pumpStatusIcon');
-            if (pumpText.innerText !== (isOn ? "กำลังรดน้ำ" : "ปิดอยู่")) {
-                pumpText.innerText = isOn ? "กำลังรดน้ำ" : "ปิดอยู่";
-                pumpText.className = isOn ? "font-bold text-green-600 text-lg" : "font-bold text-gray-700 text-lg";
-                pumpIcon.className = isOn ? "w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-lg shadow-green-200 animate-pulse" : "w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-white";
-                addLog(isOn ? "💧 Pump STARTED" : "🛑 Pump STOPPED", isOn ? "info" : "send");
+        function clearHistory() { if(confirm("ล้างประวัติ?")) { localStorage.removeItem('waterHistory'); renderCalendar(); } }
+        function renderCalendar() {
+            const c = document.getElementById('calendar'); c.innerHTML = '';
+            const t = new Date(), y = t.getFullYear(), m = t.getMonth();
+            const h = JSON.parse(localStorage.getItem('waterHistory') || '[]');
+            const dim = new Date(y, m + 1, 0).getDate(), fd = new Date(y, m, 1).getDay();
+            for(let i=0; i<fd; i++) c.innerHTML += `<div></div>`;
+            for(let i=1; i<=dim; i++) {
+                const k = `${y}-${m}-${i}`, watered = h.includes(k), isT = (i===t.getDate());
+                let cls = "cal-day bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400";
+                if(isT) cls += " border-2 border-blue-400 dark:border-blue-500 text-blue-500 font-bold";
+                if(watered) cls += " cal-watered font-bold text-white shadow-sm";
+                c.innerHTML += `<div class="${cls}">${i}</div>`;
             }
         }
+        renderCalendar();
 
-        function connectMQTT() {
-            document.getElementById('connectionStatus').innerText = "Connecting...";
-            document.getElementById('connectionStatus').className = "text-xs text-yellow-600 font-medium bg-yellow-100 px-2 py-0.5 rounded-full inline-block mt-1";
-            addLog("Connecting to Server...", "info");
-            client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId);
-            client.onConnectionLost = onConnectionLost;
-            client.onMessageArrived = onMessageArrived;
-            client.connect({onSuccess:onConnect, useSSL:true});
-        }
+        // --- Chart ---
+        async function fetchHistory() {
+            try {
+                // 1. Fetch 7 Days Data (Daily)
+                const res7 = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${FARM_LAT}&longitude=${FARM_LON}&past_days=7&forecast_days=1&hourly=temperature_2m,pm2_5&timezone=auto`); // Use pm2_5 from generic if air-quality fails or separate
+                const resAQ = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${FARM_LAT}&longitude=${FARM_LON}&past_days=7&forecast_days=1&hourly=pm2_5&timezone=auto`);
+                const data7 = await res7.json();
+                const dataAQ = await resAQ.json();
 
-        function onConnect() {
-            document.getElementById('connectionStatus').innerText = "Online";
-            document.getElementById('connectionStatus').className = "text-xs text-green-700 font-medium bg-green-100 px-2 py-0.5 rounded-full inline-block mt-1 animate-pulse";
-            addLog("✅ Connected!", "info");
-            client.subscribe(topicPubStatus);
-            client.subscribe(topicPubConfig);
-            requestSync();
-            clearInterval(syncInterval);
-            syncInterval = setInterval(requestSync, 5000);
-        }
+                // 2. Fetch 48 Hours Data (Hourly: Past 1 day + Forecast 2 days to cover 48h)
+                const res48 = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${FARM_LAT}&longitude=${FARM_LON}&past_days=1&forecast_days=2&hourly=rain,precipitation_probability&timezone=auto`);
+                const data48 = await res48.json();
 
-        function requestSync() { if(client && client.isConnected()) { let msg = new Paho.MQTT.Message("GET"); msg.destinationName = topicGetData; client.send(msg); const ind = document.getElementById('syncIndicator'); ind.style.opacity = 1; setTimeout(()=>ind.style.opacity=0, 500); } }
-        function onConnectionLost(res) { document.getElementById('connectionStatus').innerText = "Offline"; document.getElementById('connectionStatus').className = "text-xs text-red-100 font-medium bg-red-500/50 px-2 py-0.5 rounded-full inline-block mt-1"; addLog("❌ Lost", "error"); setTimeout(connectMQTT, 5000); }
+                // Process 7 Days (Sample at 12:00)
+                const times=data7.hourly.time, temps=data7.hourly.temperature_2m, pms=dataAQ.hourly.pm2_5;
+                historyData.dates=[]; historyData.temp=[]; historyData.pm25=[];
+                for(let i=0; i<times.length; i+=24) { 
+                    const d=new Date(times[i]); historyData.dates.push(`${d.getDate()}/${d.getMonth()+1}`); 
+                    historyData.temp.push(temps[i+12] || temps[i]); historyData.pm25.push(pms[i+12] || pms[i]); 
+                }
 
-        function onMessageArrived(msg) {
-            if (msg.destinationName === topicPubStatus) {
-                const data = JSON.parse(msg.payloadString);
-                if(data.rssi) updateWifiSignal(data.rssi);
+                // Process 48 Hours
+                // Find "Now" index
+                const now = new Date();
+                const times48 = data48.hourly.time;
+                let nowIdx = 0;
+                // Find closest hour
+                for(let i=0; i<times48.length; i++) {
+                    if(new Date(times48[i]) > now) { nowIdx = i; break; }
+                }
                 
-                const isOn = (data.pump === 1);
-                const isAuto = (data.auto === 1);
-                const isSchedEnabled = (data.sch_en === 1); 
-
-                updatePumpStatusUI(isOn);
-
-                const wStatus = document.getElementById('workStatus');
-                if(isOn) {
-                    wStatus.innerText = isAuto ? "Auto Running 🕒" : "Manual Running 🖐️";
-                    wStatus.className = isAuto ? "text-xs font-bold text-white bg-blue-500 px-2 py-0.5 rounded inline-block" : "text-xs font-bold text-white bg-orange-500 px-2 py-0.5 rounded inline-block";
-                } else {
-                    if(isSchedEnabled) {
-                        wStatus.innerText = "Auto Standby";
-                        wStatus.className = "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded inline-block border border-green-200";
-                    } else {
-                        wStatus.innerText = "Manual Only";
-                        wStatus.className = "text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded inline-block border border-gray-200";
+                // Get -24 to +24
+                const startIdx = Math.max(0, nowIdx - 24);
+                const endIdx = Math.min(times48.length, nowIdx + 24);
+                
+                historyData.timeline = []; historyData.rainAmount = []; historyData.rainProb = [];
+                
+                for(let i=startIdx; i<endIdx; i++) {
+                    const t = new Date(times48[i]);
+                    historyData.timeline.push(t.getHours() + ":00");
+                    
+                    // Past: Show Rain Amount (mm)
+                    if(i < nowIdx) {
+                        historyData.rainAmount.push(data48.hourly.rain[i]);
+                        historyData.rainProb.push(null); // No prob for past
+                    } 
+                    // Future: Show Prob (%)
+                    else {
+                        historyData.rainAmount.push(null); // No amount for future
+                        historyData.rainProb.push(data48.hourly.precipitation_probability[i]);
                     }
                 }
-            } 
-            else if (msg.destinationName === topicPubConfig) {
-                const data = JSON.parse(msg.payloadString);
-                if(data.schedules) {
-                    if (!isEditing && !isInputFocused()) { scheds = data.schedules; updateUIFromData(); }
-                }
-                const btn = document.getElementById('btnSave');
-                if(btn.innerText.includes("กำลังบันทึก")) {
-                    btn.innerHTML = `<span>✅</span> บันทึกเรียบร้อย`;
-                    btn.classList.replace("bg-gray-400", "bg-green-600");
-                    addLog("✅ Config Saved!", "info");
-                    isEditing = false;
-                    setTimeout(() => { btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> บันทึกการตั้งค่าทั้งหมด`; btn.classList.replace("bg-green-600", "bg-blue-600"); btn.classList.remove("bg-yellow-600"); }, 2000);
-                }
+
+                renderChart('temp');
+            } catch(e) { addLog("Chart Error: " + e.message, "error"); }
+        }
+
+        function renderChart(type) {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            if(chartInstance) chartInstance.destroy();
+            const isDark = document.documentElement.classList.contains('dark');
+            const gridColor = isDark?'#374151':'#E5E7EB';
+            const tickColor = isDark?'#9CA3AF':'#4B5563';
+
+            let config = {};
+
+            if (type === 'rain_prob') {
+                // Dual Axis Chart
+                document.getElementById('chartDesc').innerText = "ย้อนหลัง 24 ชม. (น้ำฝน) | ล่วงหน้า 24 ชม. (โอกาสตก)";
+                config = {
+                    type: 'bar',
+                    data: {
+                        labels: historyData.timeline,
+                        datasets: [
+                            {
+                                type: 'bar',
+                                label: 'ปริมาณฝน (mm)',
+                                data: historyData.rainAmount,
+                                backgroundColor: '#06B6D4',
+                                yAxisID: 'y1'
+                            },
+                            {
+                                type: 'line',
+                                label: 'โอกาสตก (%)',
+                                data: historyData.rainProb,
+                                borderColor: '#8B5CF6', // Purple
+                                backgroundColor: '#8B5CF620',
+                                borderDash: [5, 5],
+                                tension: 0.4,
+                                yAxisID: 'y2',
+                                pointRadius: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        scales: {
+                            x: { grid: { display: false }, ticks: { color: tickColor, maxTicksLimit: 8 } },
+                            y1: { type: 'linear', display: true, position: 'left', title: {display:true, text:'mm'}, grid: { color: gridColor } },
+                            y2: { type: 'linear', display: true, position: 'right', title: {display:true, text:'%'}, grid: { drawOnChartArea: false }, min: 0, max: 100 }
+                        }
+                    }
+                };
+            } else {
+                // Standard 7-Day Chart
+                document.getElementById('chartDesc').innerText = "สถิติรายวัน (ย้อนหลัง 7 วัน)";
+                let color = type === 'temp' ? '#3B82F6' : '#F59E0B';
+                let label = type === 'temp' ? 'อุณหภูมิ (°C)' : 'PM2.5 (µg)';
+                let dataset = type === 'temp' ? historyData.temp : historyData.pm25;
+                
+                config = {
+                    type: 'line',
+                    data: { labels: historyData.dates, datasets: [{ label: label, data: dataset, borderColor: color, backgroundColor: color+'20', tension: 0.4, fill: true, pointBackgroundColor: color, pointRadius: 4 }] },
+                    options: { 
+                        responsive: true, maintainAspectRatio: false, 
+                        plugins: { legend: { display: false } }, 
+                        scales: { 
+                            x: { grid: { display: false }, ticks: { color: tickColor } }, 
+                            y: { border: { display: false }, grid: { color: gridColor }, ticks: { color: tickColor } } 
+                        } 
+                    }
+                };
+            }
+
+            chartInstance = new Chart(ctx, config);
+        }
+
+        function updateChartType(t) { 
+            const baseClass = "px-3 py-1 text-xs rounded-md font-bold transition ";
+            const activeTemp = "bg-white dark:bg-gray-600 shadow-sm text-blue-600 dark:text-blue-300";
+            const activeProb = "bg-white dark:bg-gray-600 shadow-sm text-purple-600 dark:text-purple-300";
+            const activePM = "bg-white dark:bg-gray-600 shadow-sm text-orange-500 dark:text-orange-300";
+            const inactive = "text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700";
+
+            document.getElementById('btnChartTemp').className = baseClass + (t==='temp' ? activeTemp : inactive);
+            document.getElementById('btnChartProb').className = baseClass + (t==='rain_prob' ? activeProb : inactive);
+            document.getElementById('btnChartPM').className = baseClass + (t==='pm25' ? activePM : inactive);
+            
+            renderChart(t); 
+        }
+        
+        function updateChartTheme() { 
+            if(chartInstance) {
+                // Determine current type based on dataset label or existing state
+                let type = 'temp';
+                if(chartInstance.data.datasets.length > 1) type = 'rain_prob';
+                else if(chartInstance.data.datasets[0].label.includes('PM')) type = 'pm25';
+                renderChart(type); 
             }
         }
 
-        function updateUIFromData() { for(let i=0; i<2; i++) { document.getElementById('h'+i).value = scheds[i].h; document.getElementById('m'+i).value = scheds[i].m; document.getElementById('du'+i).value = scheds[i].du; document.getElementById('en'+i).checked = scheds[i].en; renderDayButtons(i); } }
-        function toggleDay(slot, day) { markEditing(); scheds[slot].days[day] = !scheds[slot].days[day]; renderDayButtons(slot); }
-        function saveSchedule() {
-            if(!client || !client.isConnected()) return alert("No Connection");
-            document.activeElement.blur(); clearTimeout(editTimeout); 
-            const btn = document.getElementById('btnSave');
-            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> กำลังบันทึก...`;
-            btn.classList.replace("bg-blue-600", "bg-gray-400"); btn.classList.remove("bg-yellow-600");
-            for(let i=0; i<2; i++) { scheds[i].h = parseInt(document.getElementById('h'+i).value); scheds[i].m = parseInt(document.getElementById('m'+i).value); scheds[i].du = parseInt(document.getElementById('du'+i).value); scheds[i].en = document.getElementById('en'+i).checked; }
-            const payload = { schedules: scheds };
-            let message = new Paho.MQTT.Message(JSON.stringify(payload)); message.destinationName = topicSetSched; client.send(message); addLog("📤 Sending Config...", "send");
+        // --- Core ---
+        function addLog(msg, type="info") { const box = document.getElementById('consoleLog'); const time = new Date().toLocaleTimeString('th-TH', { hour12: false }); let color = "text-green-400"; if(type === "send") color = "text-blue-400"; if(type === "error") color = "text-red-400"; box.innerHTML += `<div class="${color}"><span class="text-gray-500 mr-2">[${time}]</span>${msg}</div>`; box.scrollTop = box.scrollHeight; }
+        function clearLog() { document.getElementById('consoleLog').innerHTML = ''; }
+        function markEditing() { isEditing=true; clearTimeout(editTimeout); document.getElementById('btnSave').innerHTML = `<span class="animate-pulse">⚠️</span> มีการแก้ไข...`; document.getElementById('btnSave').classList.replace("bg-blue-600", "bg-yellow-600"); editTimeout=setTimeout(()=>{isEditing=false;},10000); }
+        function isInputFocused() { const el = document.activeElement; return (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT')); }
+        
+        function updatePumpStatusUI(isOn) {
+            const txt = document.getElementById('pumpStatusText');
+            const icon = document.getElementById('pumpIconLarge');
+            const dot = document.getElementById('pumpStatusDot');
+            if(txt.innerText !== (isOn ? "กำลังรดน้ำ" : "ปิดอยู่")) {
+                txt.innerText = isOn ? "กำลังรดน้ำ" : "ปิดอยู่";
+                txt.className = `text-3xl font-extrabold tracking-tight ${isOn ? "text-green-600 dark:text-green-400" : "text-gray-700 dark:text-gray-200"}`;
+                dot.className = `w-4 h-4 rounded-full border-2 border-white dark:border-gray-700 transition-colors duration-300 ${isOn ? "bg-green-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" : "bg-gray-300"}`;
+                if(isOn) { icon.classList.add("bg-blue-100", "text-blue-500", "pump-active", "grayscale-0", "opacity-100"); icon.classList.remove("bg-gray-50", "text-gray-300", "dark:bg-gray-700/50", "grayscale", "opacity-50"); logWatering(); } 
+                else { icon.classList.remove("bg-blue-100", "text-blue-500", "pump-active", "grayscale-0", "opacity-100"); icon.classList.add("bg-gray-50", "text-gray-300", "dark:bg-gray-700/50", "grayscale", "opacity-50"); }
+            }
         }
-        function sendCommand(cmd) { if(!client || !client.isConnected()) return; let message = new Paho.MQTT.Message(cmd); message.destinationName = topicCmd; client.send(message); addLog("📤 Cmd: " + cmd, "send"); }
-        connectMQTT();
+
+        // --- Weather & MQTT ---
+        function getWeather() { fetchWeatherData(); fetchAirQuality(); fetchHistory(); }
+        function fetchWeatherData() { 
+            fetch(`https://api.open-meteo.com/v1/forecast?latitude=${FARM_LAT}&longitude=${FARM_LON}&current=temperature_2m,relative_humidity_2m,rain,weather_code&timezone=auto`).then(r=>r.json()).then(d=>{ 
+                const t=d.current.temperature_2m, r=d.current.rain, h=d.current.relative_humidity_2m, wc=d.current.weather_code;
+                document.getElementById('weatherTemp').innerText=t+"°"; 
+                document.getElementById('weatherDesc').innerText=r>0?"ฝนตก 🌧️":"ท้องฟ้าแจ่มใส"; 
+                document.getElementById('weatherIcon').innerText=r>0?"🌧️":"☀️"; 
+                
+                document.getElementById('rainValue').innerText=r;
+                document.getElementById('humidValue').innerText=h+"%";
+                
+                isRaining=(r>0); 
+            }); 
+        }
+        function fetchAirQuality() { fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${FARM_LAT}&longitude=${FARM_LON}&current=pm2_5&timezone=auto`).then(r=>r.json()).then(d=>{ const pm=d.current.pm2_5; document.getElementById('pm25Value').innerText=pm; const b=document.getElementById('pm25Badge'); if(pm>75){b.className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full mt-1 border border-red-200";b.innerText="อันตราย";}else if(pm>50){b.className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full mt-1 border border-orange-200";b.innerText="เริ่มมีผล";}else if(pm>25){b.className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full mt-1 border border-yellow-200";b.innerText="ปานกลาง";}else{b.className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full mt-1 border border-green-200";b.innerText="ดีเยี่ยม";} }); }
+        function checkWeatherAndRun(cmd) { if(cmd==='ON'&&isRaining){if(confirm("ฝนตกอยู่แน่ใจนะ?"))sendCommand(cmd);}else sendCommand(cmd); }
+
+        function connectMQTT() { document.getElementById('connectionStatus').innerText="Connecting..."; client = new Paho.MQTT.Client(mqttBroker, mqttPort, clientId); client.onConnectionLost=onConnectionLost; client.onMessageArrived=onMessageArrived; client.connect({onSuccess:onConnect, useSSL:true}); }
+        function onConnect() { document.getElementById('connectionStatus').innerText="Online"; document.getElementById('connectionStatus').className="text-[10px] text-green-100 bg-green-500 px-2 rounded-full inline-block animate-pulse"; addLog("✅ Connected!", "info"); client.subscribe(topicPubStatus); client.subscribe(topicPubConfig); requestSync(); setInterval(requestSync, 5000); }
+        function onConnectionLost(r) { document.getElementById('connectionStatus').innerText="Offline"; document.getElementById('connectionStatus').className="text-[10px] text-white bg-red-500 px-2 rounded-full inline-block"; addLog("❌ Lost", "error"); setTimeout(connectMQTT,5000); }
+        function requestSync() { if(client.isConnected()) { let m=new Paho.MQTT.Message("GET"); m.destinationName=topicGetData; client.send(m); const ind=document.getElementById('syncIndicator'); ind.style.opacity=1; setTimeout(()=>ind.style.opacity=0, 500); } }
+        function sendCommand(c) { if(client.isConnected()) { let m=new Paho.MQTT.Message(c); m.destinationName=topicCmd; client.send(m); addLog("📤 Cmd: "+c, "send"); } }
+        function saveSchedule() { if(!client.isConnected()) return alert("Offline"); const btn=document.getElementById('btnSave'); btn.innerHTML=`<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Saving...`; btn.classList.replace("bg-yellow-600", "bg-gray-400"); for(let i=0;i<2;i++) { scheds[i].h=parseInt(document.getElementById('h'+i).value); scheds[i].m=parseInt(document.getElementById('m'+i).value); scheds[i].du=parseInt(document.getElementById('du'+i).value); scheds[i].en=document.getElementById('en'+i).checked; } let m=new Paho.MQTT.Message(JSON.stringify({schedules:scheds})); m.destinationName=topicSetSched; client.send(m); addLog("📤 Sending Config...", "send"); }
+        function onMessageArrived(msg) {
+            if(msg.destinationName === topicPubStatus) {
+                const d = JSON.parse(msg.payloadString);
+                // Wifi Icon Logic
+                const v = parseInt(d.rssi); const bars = document.getElementById('wifiIcon').children;
+                document.getElementById('rssiText').innerText = v + " dBm";
+                bars[0].className=`w-1.5 h-1.5 rounded-sm ${v>-90?'bg-white':'bg-red-400'}`;
+                bars[1].className=`w-1.5 h-2.5 rounded-sm ${v>-80?'bg-white':'bg-white/30'}`;
+                bars[2].className=`w-1.5 h-3.5 rounded-sm ${v>-70?'bg-white':'bg-white/30'}`;
+                bars[3].className=`w-1.5 h-[18px] rounded-sm ${v>-60?'bg-white':'bg-white/30'}`;
+                
+                updatePumpStatusUI(d.pump===1);
+                const ws = document.getElementById('workStatus');
+                if(d.pump===1) { ws.innerHTML = `<span class="text-blue-500">●</span> ${d.auto===1?"Auto Run":"Manual Run"}`; }
+                else { ws.innerHTML = d.sch_en===1 ? `<span class="text-green-500">●</span> Auto Standby` : `<span class="text-gray-400">●</span> Manual Only`; }
+            }
+            else if(msg.destinationName === topicPubConfig) {
+                const d = JSON.parse(msg.payloadString);
+                if(d.schedules && !isEditing) { scheds = d.schedules; updateUIFromData(); }
+                const btn = document.getElementById('btnSave');
+                if(btn.innerHTML.includes("Saving")) { btn.innerHTML = `<span>✅</span> บันทึกแล้ว`; btn.classList.replace("bg-gray-400", "bg-green-600"); isEditing=false; setTimeout(()=>{btn.innerHTML=`<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> บันทึกการตั้งค่า`; btn.classList.replace("bg-green-600", "bg-indigo-600");}, 2000); }
+            }
+        }
+        function updateUIFromData() { for(let i=0; i<2; i++) { document.getElementById('h'+i).value = scheds[i].h; document.getElementById('m'+i).value = scheds[i].m; document.getElementById('du'+i).value = scheds[i].du; document.getElementById('en'+i).checked = scheds[i].en; renderDayButtons(i); } }
+        function toggleDay(si, di) { markEditing(); scheds[si].days[di] = !scheds[si].days[di]; renderDayButtons(si); }
+
+        connectMQTT(); getWeather(); setInterval(getWeather, 600000); fetchHistory();
     </script>
 </body>
 </html>
